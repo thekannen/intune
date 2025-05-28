@@ -1,6 +1,6 @@
 $folder = "C:\ProgramData\POSControl"
-$syncScript = "$folder\Download-GitHubScripts.ps1"
-$repoUrl = "https://raw.githubusercontent.com/<org>/pos-powershell-scripts/main/Download-GitHubScripts.ps1"
+$syncScript = "$folder\Download-IntuneScriptsFromGithub.ps1"
+$repoUrl = "https://github.com/thekannen/intune/blob/225649e71268e34f533f885da81fe9d0dec7e23e/Download-IntuneScriptsFromGithub.ps1"
 
 # Ensure folder exists
 if (-not (Test-Path $folder)) {
