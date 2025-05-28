@@ -1,0 +1,5 @@
+{
+  "scripts": [
+    "ToggleSettingsAccessByRole.ps1"
+  ]
+}
