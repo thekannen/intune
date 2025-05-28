@@ -1,46 +1,73 @@
 # Download-IntuneScriptsFromGithub.ps1
-# Description:
-#   - Downloads a list of scripts and resources from a public GitHub repository (RAW format)
-#   - Stores the scripts in C:\ProgramData\IntuneControl
-#   - Intended to run as SYSTEM (e.g., via a startup scheduled task) to preload user-facing scripts
 
-# Define a list of scripts to download
-# Keys = RAW GitHub URLs (pointing directly to files in your repo)
-# Values = local destination paths on the device
+<#
+.SYNOPSIS
+    Preloads user-facing PowerShell scripts from GitHub to a local folder.
+
+.DESCRIPTION
+    - Downloads a manifest and script files from a public GitHub repository (raw format)
+    - Saves all files under C:\ProgramData\IntuneControl
+    - Executes any scripts defined in the JSON manifest immediately
+    - Intended to run as SYSTEM (via NinjaOne policy, automation, or startup task)
+    - Execution is non-interactive and assumes network connectivity
+
+.NOTES
+    Deployment platform: NinjaOne
+    Execution context: SYSTEM
+    Output location: C:\ProgramData\IntuneControl
+#>
+
+# Define a map of RAW GitHub URLs to local storage paths
 $scriptsToDownload = @{
-    # Manifest file that defines which scripts to run per user logon
+    # JSON manifest listing scripts to run in user context
     "https://raw.githubusercontent.com/thekannen/intune/main/scripts.json" = "C:\ProgramData\IntuneControl\scripts.json"
 
-    # Determines the scripts to run
-    "https://raw.githubusercontent.com/thekannen/intune/main/Run-UserScriptsFromGithubManifest.ps1" = "C:\ProgramData\IntuneControl\Run-UserScriptsFromGithubManifest.ps1"
+    # Script to toggle Settings access based on user role (HKCU)
+    "https://raw.githubusercontent.com/thekannen/intune/main/ToggleSettingsAccessByRole.ps1" = "C:\ProgramData\IntuneControl\ToggleSettingsAccessByRole.ps1"
 
-    # Toggles Settings app access based on user role
-    "https://raw.githubusercontent.com/thekannen/intune/ToggleSettingsAccessByRole.ps1" = "C:\ProgramData\IntuneControl\ToggleSettingsAccessByRole.ps1"
-
-    # Add additional scripts below as needed
-    # "https://raw.githubusercontent.com/.../AnotherScript.ps1" = "C:\ProgramData\IntuneControl\AnotherScript.ps1"
+    # Example: Add more scripts below as needed
+    # "https://raw.githubusercontent.com/..." = "C:\ProgramData\IntuneControl\YourScript.ps1"
 }
 
-# Delay to avoid startup timing issues
-Start-Sleep -Seconds 20
-
-# Loop through each defined script and download it
+# Download each defined script to the local folder
 foreach ($url in $scriptsToDownload.Keys) {
     $localPath = $scriptsToDownload[$url]
     $folder = Split-Path -Path $localPath -Parent
 
-    # Ensure the destination folder exists
+    # Ensure the target directory exists
     if (-not (Test-Path $folder)) {
         New-Item -Path $folder -ItemType Directory -Force | Out-Null
     }
 
-    # Download the script and save it locally
+    # Attempt to download the file
     try {
         Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing
         Write-Host "Downloaded: $url to $localPath"
     }
     catch {
-        # Log a warning if any script fails to download
         Write-Warning "Failed to download $url - $_"
     }
+}
+
+# Load and execute user-context scripts listed in the manifest
+$manifestUrl = "https://raw.githubusercontent.com/thekannen/intune/main/scripts.json"
+
+try {
+    # Retrieve the manifest JSON file from GitHub
+    $manifest = Invoke-RestMethod -Uri $manifestUrl -UseBasicParsing
+
+    # Loop over each script name in the manifest
+    foreach ($scriptName in $manifest.scripts) {
+        $localPath = Join-Path "C:\ProgramData\IntuneControl" $scriptName
+
+        # If the script file exists locally, invoke it
+        if (Test-Path $localPath) {
+            Write-Host "Running $scriptName"
+            powershell.exe -ExecutionPolicy Bypass -File "`"$localPath`""
+        } else {
+            Write-Warning "Script not found: $localPath"
+        }
+    }
+} catch {
+    Write-Error "Failed to process script manifest or run scripts: $_"
 }
