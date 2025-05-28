@@ -1,10 +1,7 @@
 # Intune Control Scheduled Task Setup
 # Description:
 #   - Downloads Intune-controlled scripts from GitHub to C:\ProgramData\IntuneControl
-#   - Sets up two scheduled tasks:
-#       1. SYSTEM-level task that syncs scripts from GitHub at startup (with delay)
-#       2. USER-level task that runs synced scripts at every logon (per logged-in user)
-
+#   - Sets up a scheduled task SYSTEM-level task that syncs scripts from GitHub at startup
 $folder = "C:\ProgramData\IntuneControl"
 $syncScript = "$folder\Download-IntuneScriptsFromGithub.ps1"
 $repoRawUrl = "https://raw.githubusercontent.com/thekannen/intune/main/Download-IntuneScriptsFromGithub.ps1"
@@ -23,7 +20,7 @@ $startupTaskName  = "IntuneControl_ScriptDownloader"
 $startupScript    = $syncScript
 $startupAction    = New-ScheduledTaskAction -Execute "powershell.exe" `
                      -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startupScript`""
-$startupTrigger   = New-ScheduledTaskTrigger -AtStartup -Delay "PT30S"  # 30-second delay for network readiness
+$startupTrigger   = New-ScheduledTaskTrigger -AtStartup
 $startupPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $startupSettings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
@@ -36,23 +33,3 @@ Register-ScheduledTask -TaskName $startupTaskName `
 
 # Run it immediately to ensure the scripts are pulled down at least once
 powershell.exe -ExecutionPolicy Bypass -File $syncScript
-
-# --- USER TASK: Run downloaded scripts at each user logon ---
-
-$userTaskName  = "IntuneControl_RunUserScripts"
-$userScript    = "$folder\Run-UserScriptsFromGithubManifest.ps1"
-$userAction    = New-ScheduledTaskAction -Execute "powershell.exe" `
-                    -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$userScript`""
-$userTrigger   = New-ScheduledTaskTrigger -AtLogOn
-$userPrincipal = New-ScheduledTaskPrincipal -GroupId "Users" -LogonType Interactive -RunLevel Limited
-$userSettings  = New-ScheduledTaskSettingsSet `
-                    -AllowStartIfOnBatteries `
-                    -DontStopIfGoingOnBatteries `
-                    -MultipleInstances IgnoreNew
-
-Register-ScheduledTask -TaskName $userTaskName `
-    -Action $userAction `
-    -Trigger $userTrigger `
-    -Principal $userPrincipal `
-    -Settings $userSettings `
-    -Force

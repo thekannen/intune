@@ -21,6 +21,9 @@ $scriptsToDownload = @{
     # "https://raw.githubusercontent.com/.../AnotherScript.ps1" = "C:\ProgramData\IntuneControl\AnotherScript.ps1"
 }
 
+# Delay to avoid startup timing issues
+Start-Sleep -Seconds 20
+
 # Loop through each defined script and download it
 foreach ($url in $scriptsToDownload.Keys) {
     $localPath = $scriptsToDownload[$url]
