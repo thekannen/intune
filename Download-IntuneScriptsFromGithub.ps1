@@ -11,6 +11,9 @@ $scriptsToDownload = @{
     # Manifest file that defines which scripts to run per user logon
     "https://raw.githubusercontent.com/thekannen/intune/main/scripts.json" = "C:\ProgramData\IntuneControl\scripts.json"
 
+    # Determines the scripts to run
+    "https://raw.githubusercontent.com/thekannen/intune/main/Run-UserScriptsFromGithubManifest.ps1" = "C:\ProgramData\IntuneControl\Run-UserScriptsFromGithubManifest.ps1"
+
     # Toggles Settings app access based on user role
     "https://raw.githubusercontent.com/thekannen/intune/ToggleSettingsAccessByRole.ps1" = "C:\ProgramData\IntuneControl\ToggleSettingsAccessByRole.ps1"
 
