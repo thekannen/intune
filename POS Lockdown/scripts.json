@@ -1,5 +1,6 @@
 {
   "scripts": [
-    "ToggleSettingsAccessByRole.ps1"
+    "POSLockdown.ps1",
+    "Download-ScriptsFromGithub.ps1"
   ]
 }

@@ -22,7 +22,7 @@ $LockdownSettings = @{
 }
 
 # Log file setup
-$logFile = "C:\ProgramData\SSA\Logs\POSLockdownLog.txt"
+$logFilePath = "C:\ProgramData\SSA\Logs\POSLockdownLog.txt"
 
 # Registry path for HKCU policies
 $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
