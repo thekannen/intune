@@ -11,16 +11,22 @@ $tempDownloadPath = Join-Path $env:TEMP "ssa_temp_download.ps1"
 # Logging function
 function Write-Log {
     param([string]$Message)
-
     $logFolder = Split-Path $logFilePath
     if (-not (Test-Path $logFolder)) {
         New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
     }
-
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
+# Helper function to compute SHA256 hash
+function Get-FileHashString {
+    param ($Path)
+    if (Test-Path $Path) {
+        return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash
+    }
+    return $null
+}
 
 # Ensure local folder exists
 if (-not (Test-Path $localScriptPath)) {
@@ -44,15 +50,6 @@ try {
 } catch {
     Write-Log "ERROR parsing scripts.json: $($_.Exception.Message)"
     exit 1
-}
-
-# Helper function to compute SHA256 hash
-function Get-FileHashString {
-    param ($Path)
-    if (Test-Path $Path) {
-        return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash
-    }
-    return $null
 }
 
 foreach ($script in $scripts) {

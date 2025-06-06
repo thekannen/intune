@@ -30,13 +30,18 @@ foreach ($folder in $folders) {
 
 # Set Permissions (Restrictive but readable by users for Scripts and Secrets)
 try {
+   # Secrets - No user access
     icacls "$basePath\Secrets" /inheritance:r
-    icacls "$basePath\Secrets" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Authenticated Users:(OI)(CI)RX"
-    Write-Log "Set ACLs for Secrets folder."
+    icacls "$basePath\Secrets" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
 
+    # Scripts - Read-only for users
     icacls "$basePath\Scripts" /inheritance:r
-    icacls "$basePath\Scripts" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Authenticated Users:(OI)(CI)RX"
-    Write-Log "Set ACLs for Scripts folder."
+    icacls "$basePath\Scripts" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Authenticated Users:(OI)(CI)(RX)"
+
+    # Logs - Writable by users
+    icacls "$basePath\Logs" /inheritance:r
+    icacls "$basePath\Logs" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Authenticated Users:(OI)(CI)(M)"
+
 } catch {
     Write-Log "ERROR setting folder permissions: $($_.Exception.Message)"
 }
@@ -77,7 +82,7 @@ try {
 try {
     $updateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$localDownloadScriptPath`""
     $updateTrigger = New-ScheduledTaskTrigger -Daily -At 3am
-    $updatePrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Limited
+    $updatePrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     Register-ScheduledTask -Action $updateAction -Trigger $updateTrigger -Principal $updatePrincipal -TaskName "SSA_ScriptUpdater" -Description "Updates SSA scripts nightly" -Force
     Write-Log "Scheduled Task SSA_ScriptUpdater created successfully."
 } catch {

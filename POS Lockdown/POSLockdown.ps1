@@ -60,19 +60,47 @@ function Set-POSLockdown {
     param (
         [bool]$Enable
     )
+
+    Write-Log "Starting Set-POSLockdown function. Enable = $Enable"
+
     if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
+        try {
+            New-Item -Path $regPath -Force | Out-Null
+            Write-Log "Created registry path: $regPath"
+        } catch {
+            Write-Log "ERROR creating registry path $regPath : $($_.Exception.Message)"
+        }
+    } else {
+        Write-Log "Registry path already exists: $regPath"
     }
-    
-    foreach ($setting in $LockdownSettings.Keys) {
-        if ($LockdownSettings[$setting]) {
-            if ($Enable) {
-                Set-ItemProperty -Path $regPath -Name $setting -Value 1 -Type DWord
+
+    if ($Enable) {
+        foreach ($setting in $LockdownSettings.Keys) {
+            if ($LockdownSettings[$setting]) {
+                try {
+                    Set-ItemProperty -Path $regPath -Name $setting -Value 1 -Type DWord -Force
+                    Write-Log "Applied registry setting: $setting = 1"
+                } catch {
+                    Write-Log "ERROR applying setting $setting : $($_.Exception.Message)"
+                }
             } else {
-                Remove-ItemProperty -Path $regPath -Name $setting -ErrorAction SilentlyContinue
+                Write-Log "Skipping setting $setting because it's disabled in LockdownSettings."
+            }
+        }
+    } else {
+        foreach ($setting in $LockdownSettings.Keys) {
+            try {
+                if (Get-ItemProperty -Path $regPath -Name $setting -ErrorAction Stop) {
+                    Remove-ItemProperty -Path $regPath -Name $setting -ErrorAction SilentlyContinue
+                    Write-Log "Removed registry setting: $setting"
+                }
+            } catch {
+                Write-Log "Setting $setting does not exist, skipping removal."
             }
         }
     }
+
+    Write-Log "Set-POSLockdown function completed."
 }
 
 function Write-Log {
