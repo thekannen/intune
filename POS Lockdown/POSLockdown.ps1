@@ -78,8 +78,13 @@ function Set-POSLockdown {
 function Write-Log {
     param([string]$Message)
 
+    $logFolder = Split-Path $logFilePath
+    if (-not (Test-Path $logFolder)) {
+        New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
+    }
+
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    "$timestamp - $env:USERNAME - $Message" | Out-File -FilePath $logFile -Append -Encoding utf8
+    "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
 # --- MAIN SCRIPT LOGIC ---

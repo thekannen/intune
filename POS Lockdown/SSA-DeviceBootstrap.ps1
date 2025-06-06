@@ -7,9 +7,16 @@ $folders = @("Scripts", "Secrets", "Logs")
 # --- Logging function ---
 function Write-Log {
     param([string]$Message)
+
+    $logFolder = Split-Path $logFilePath
+    if (-not (Test-Path $logFolder)) {
+        New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
+    }
+
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
+
 
 # Create required directories
 foreach ($folder in $folders) {
