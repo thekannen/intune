@@ -17,7 +17,6 @@ function Write-Log {
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-
 # Create required directories
 foreach ($folder in $folders) {
     $fullPath = Join-Path $basePath $folder
@@ -52,30 +51,15 @@ try {
     Write-Log "ERROR creating client secret file: $($_.Exception.Message)"
 }
 
-# Download and create the Download-ScriptsFromGithub.ps1
-$downloadScript = @"
-# Downloads updated scripts from GitHub
-\$RepoURL = 'https://raw.githubusercontent.com/thekannen/intune/main/POS%20Lockdown/'
-\$ScriptList = 'scripts.json'
-
-\$localScriptPath = '$basePath\Scripts'
-\$localScriptJson = Join-Path \$localScriptPath 'scripts.json'
-
-# Download the scripts.json first
-Invoke-WebRequest -Uri "\$RepoURL\$ScriptList" -OutFile \$localScriptJson -UseBasicParsing
-
-# Parse and download each script listed
-\$scripts = (Get-Content -Path \$localScriptJson | ConvertFrom-Json).scripts
-foreach (\$script in \$scripts) {
-    \$scriptUrl = "\$RepoURL\$script"
-    Invoke-WebRequest -Uri \$scriptUrl -OutFile (Join-Path \$localScriptPath \$script) -UseBasicParsing
-}
-"@
+# Download Download-ScriptsFromGithub.ps1 only
 try {
-    Set-Content -Path "$basePath\Scripts\Download-ScriptsFromGithub.ps1" -Value $downloadScript -Force
-    Write-Log "Download-ScriptsFromGithub.ps1 script created successfully."
+    $downloadScriptURL = 'https://raw.githubusercontent.com/thekannen/intune/main/POS%20Lockdown/Download-ScriptsFromGithub.ps1'
+    $localDownloadScriptPath = Join-Path $basePath "Scripts\Download-ScriptsFromGithub.ps1"
+    
+    Invoke-WebRequest -Uri $downloadScriptURL -OutFile $localDownloadScriptPath -UseBasicParsing -ErrorAction Stop
+    Write-Log "Download-ScriptsFromGithub.ps1 downloaded successfully."
 } catch {
-    Write-Log "ERROR creating Download-ScriptsFromGithub.ps1: $($_.Exception.Message)"
+    Write-Log "ERROR downloading Download-ScriptsFromGithub.ps1: $($_.Exception.Message)"
 }
 
 # Create Scheduled Task (Run at Logon as USER)
@@ -91,7 +75,7 @@ try {
 
 # Create Scheduled Task for Script Auto-Update
 try {
-    $updateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$basePath\Scripts\Download-ScriptsFromGithub.ps1`""
+    $updateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$localDownloadScriptPath`""
     $updateTrigger = New-ScheduledTaskTrigger -Daily -At 3am
     $updatePrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Limited
     Register-ScheduledTask -Action $updateAction -Trigger $updateTrigger -Principal $updatePrincipal -TaskName "SSA_ScriptUpdater" -Description "Updates SSA scripts nightly" -Force
@@ -100,9 +84,9 @@ try {
     Write-Log "ERROR creating SSA_ScriptUpdater task: $($_.Exception.Message)"
 }
 
-# Initial Script Pull (download scripts.json + scripts)
+# Initial Script Pull (Download-ScriptsFromGithub.ps1 kicks off the rest)
 try {
-    Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$basePath\Scripts\Download-ScriptsFromGithub.ps1`"" -Wait
+    Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$localDownloadScriptPath`"" -Wait
     Write-Log "Initial script download started successfully."
 } catch {
     Write-Log "ERROR starting initial script download: $($_.Exception.Message)"

@@ -97,7 +97,7 @@ try {
     Write-Log "Token acquired."
 
     # Check group membership
-    $upn = "$env:USERNAME@yourdomain.com"  # <-- replace with your UPN domain
+    $upn = "$env:USERNAME@thessagroup.com"  # <-- replace with your UPN domain
     Write-Log "Checking group membership for $upn ..."
     $body = @{ groupIds = @($posGroupId, $adminExemptId) } | ConvertTo-Json
     $headers = @{
