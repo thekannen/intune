@@ -8,13 +8,15 @@ $logFilePath = 'C:\ProgramData\SSA\Logs\DownloadLog.txt'
 $localScriptJson = Join-Path $localScriptPath 'scripts.json'
 $tempDownloadPath = Join-Path $env:TEMP "ssa_temp_download.ps1"
 
-# Logging function
+# --- Logging function ---
 function Write-Log {
     param([string]$Message)
+
     $logFolder = Split-Path $logFilePath
     if (-not (Test-Path $logFolder)) {
         New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
     }
+
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }

@@ -5,7 +5,7 @@ $logFilePath = "$basePath\Logs\BootstrapperLog.txt"
 $folders = @("Scripts", "Secrets", "Logs", "LockdownQueue")
 
 #----------- !!REPLACE CLIENT SECRET AT TIME OF SCRIPT INSTALL!! ---------------
-$clientSecret = '!!REPLACE_WITH_CLIENT_SECRET!!'
+$clientSecretPlain = '!!REPLACE_WITH_CLIENT_SECRET!!'
 
 # --- Logging function ---
 function Write-Log {
@@ -46,15 +46,32 @@ try {
     icacls "$basePath\Logs" /inheritance:r
     icacls "$basePath\Logs" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Authenticated Users:(OI)(CI)(M)"
 
+    # LockdownQueue - Allow write for all users
+    $queuePath = "$basePath\LockdownQueue"
+    if (-not (Test-Path $queuePath)) {
+        New-Item -Path $queuePath -ItemType Directory -Force | Out-Null
+        Write-Log "Created folder: $queuePath"
+    }
+
+    # Remove inherited permissions and assign explicit ACLs
+    icacls $queuePath /inheritance:r
+    icacls $queuePath /grant:r `
+        "SYSTEM:(OI)(CI)F" `
+        "Administrators:(OI)(CI)F" `
+        "Authenticated Users:(OI)(CI)W"
+
 } catch {
     Write-Log "ERROR setting folder permissions: $($_.Exception.Message)"
 }
 
-# Create a secret file
+# Create a secret file (encrypted for all users on this machine)
 try {
-    $secureString = ConvertTo-SecureString $clientSecretPlain -AsPlainText -Force
-    $secureString | ConvertFrom-SecureString -SecureKey $null -Scope LocalMachine | Out-File "$basePath\Secrets\GraphApiCred.txt"
-    Write-Log "Client secret encrypted and stored successfully."
+    Add-Type -AssemblyName System.Security
+    $plain = [System.Text.Encoding]::UTF8.GetBytes($clientSecretPlain)
+    $encrypted = [System.Security.Cryptography.ProtectedData]::Protect($plain, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+    [Convert]::ToBase64String($encrypted) | Out-File "$basePath\Secrets\GraphApiCred.dat"
+    Write-Log "Client secret encrypted with machine scope."
+
 } catch {
     Write-Log "ERROR creating client secret file: $($_.Exception.Message)"
 }
@@ -74,10 +91,12 @@ try {
 try {
     $userAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\POSUserPolicyDetector.ps1"'
     $userTrigger = New-ScheduledTaskTrigger -AtLogOn
+    $userPrincipal = New-ScheduledTaskPrincipal -GroupId "Users" -RunLevel Limited
 
     Register-ScheduledTask -TaskName "SSA - Detect POS Lockdown (User)" `
-        -Action $userAction -Trigger $userTrigger `
-        -GroupId "BUILTIN\Users" -RunLevel Limited `
+        -Action $userAction `
+        -Trigger $userTrigger `
+        -Principal $userPrincipal `
         -Description "Detects user lockdown group membership at logon" `
         -Force
 } catch {

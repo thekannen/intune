@@ -19,19 +19,19 @@ $LockdownOptions = @{
 
 # --- PATH SETUP ---
 $queuePath = "C:\ProgramData\SSA\LockdownQueue"
-$logPath   = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
+$logFilePath   = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
 
-# --- Logging function (standardized) ---
+# --- Logging function ---
 function Write-Log {
     param([string]$Message)
 
-    $logFolder = Split-Path $logPath
+    $logFolder = Split-Path $logFilePath
     if (-not (Test-Path $logFolder)) {
         New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
     }
 
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    "$timestamp - $Message" | Out-File -FilePath $logPath -Append -Encoding utf8
+    "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
 # --- PROCESS EACH USER POLICY DECISION ---
@@ -52,7 +52,7 @@ Get-ChildItem -Path $queuePath -Filter "*.txt" -ErrorAction SilentlyContinue | F
                         Set-ItemProperty -Path $regPath -Name $setting.Key -Value 1 -Type DWord -Force
                         Write-Log "[INFO] [$sid] Applied: $($setting.Key)=1"
                     } catch {
-                        Write-Log "[ERROR] [$sid] Failed to apply $($setting.Key): $($_.Exception.Message)"
+                        Write-Log "[ERROR] [$sid] Failed to apply $($setting.Key) : $($_.Exception.Message)"
                     }
                 }
             }
@@ -64,7 +64,7 @@ Get-ChildItem -Path $queuePath -Filter "*.txt" -ErrorAction SilentlyContinue | F
                     Remove-ItemProperty -Path $regPath -Name $setting -ErrorAction SilentlyContinue
                     Write-Log "[INFO] [$sid] Removed: $setting"
                 } catch {
-                    Write-Log "[WARN] [$sid] Failed to remove $setting: $($_.Exception.Message)"
+                    Write-Log "[WARN] [$sid] Failed to remove $setting : $($_.Exception.Message)"
                 }
             }
             Write-Log "[INFO] [$sid] Lockdown removed (status: $decision)."
