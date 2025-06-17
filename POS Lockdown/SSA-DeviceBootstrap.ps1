@@ -89,7 +89,7 @@ try {
 
 # Create Schedule Task to detect and cache logged in user (Run at Logon as USER)
 try {
-    $userAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\POSUserPolicyDetector.ps1"'
+    $userAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\Scripts\POSUserPolicyDetector.ps1"'
     $userTrigger = New-ScheduledTaskTrigger -AtLogOn
     $userPrincipal = New-ScheduledTaskPrincipal -GroupId "Users" -RunLevel Limited
 
@@ -105,7 +105,7 @@ try {
 
 # Create Scheduled Task to apply the settings (Run at Logon as SYSTEM with 5s delay)
 try {
-    $sysAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\POSApplyUserLockdown.ps1"'
+    $sysAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\Scripts\POSApplyUserLockdown.ps1"'
     $sysTrigger = New-ScheduledTaskTrigger -AtLogOn
     $sysTrigger.Delay = 'PT5S'  # 5-second delay to let user script finish first
 
