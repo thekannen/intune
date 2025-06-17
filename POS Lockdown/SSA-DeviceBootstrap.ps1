@@ -36,7 +36,7 @@ try {
    # Secrets - No user access
     icacls "$basePath\Secrets" /inheritance:r
     icacls "$basePath\Secrets" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
-    icacls "$basePath\Secrets" /remove "Users" "Authenticated Users" "Everyone"
+    icacls "$basePath\Secrets" /grant:r "Authenticated Users:(OI)(CI)(RX)" 
 
     # Scripts - Read-only for users
     icacls "$basePath\Scripts" /inheritance:r
@@ -58,7 +58,7 @@ try {
     icacls $queuePath /grant:r `
         "SYSTEM:(OI)(CI)F" `
         "Administrators:(OI)(CI)F" `
-        "Authenticated Users:(OI)(CI)W"
+        "Authenticated Users:(OI)(CI)(M)"
 
 } catch {
     Write-Log "ERROR setting folder permissions: $($_.Exception.Message)"
@@ -103,22 +103,37 @@ try {
     Write-Log "ERROR creating SSA - Detect POS Lockdown (User) task: $($_.Exception.Message)"
 }
 
-# Create Scheduled Task to cache apply the settings (Run at Logon as SYSTEM)
-try{
+# Create Scheduled Task to apply the settings (Run at Logon as SYSTEM with 5s delay)
+try {
     $sysAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\POSApplyUserLockdown.ps1"'
     $sysTrigger = New-ScheduledTaskTrigger -AtLogOn
+    $sysTrigger.Delay = 'PT5S'  # 5-second delay to let user script finish first
+
     Register-ScheduledTask -TaskName "SSA - Apply POS Lockdown (System)" `
-        -Action $sysAction -Trigger $sysTrigger -RunLevel Highest -User "SYSTEM" -Force
+        -Action $sysAction `
+        -Trigger $sysTrigger `
+        -RunLevel Highest `
+        -User "SYSTEM" `
+        -Force
 } catch {
     Write-Log "ERROR creating SSA - Apply POS Lockdown (System) task: $($_.Exception.Message)"
 }
 
-# Create Scheduled Task for Script Auto-Update
+# Create Scheduled Task for Script Auto-Update at logon with 5-minute delay
 try {
     $updateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$localDownloadScriptPath`""
-    $updateTrigger = New-ScheduledTaskTrigger -Daily -At 3am
+    $updateTrigger = New-ScheduledTaskTrigger -AtLogOn
+    $updateTrigger.Delay = 'PT5M'  # Delay 5 minutes after logon
+
     $updatePrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-    Register-ScheduledTask -Action $updateAction -Trigger $updateTrigger -Principal $updatePrincipal -TaskName "SSA_ScriptUpdater" -Description "Updates SSA scripts nightly" -Force
+
+    Register-ScheduledTask -Action $updateAction `
+        -Trigger $updateTrigger `
+        -Principal $updatePrincipal `
+        -TaskName "SSA_ScriptUpdater" `
+        -Description "Updates SSA scripts after logon" `
+        -Force
+
     Write-Log "Scheduled Task SSA_ScriptUpdater created successfully."
 } catch {
     Write-Log "ERROR creating SSA_ScriptUpdater task: $($_.Exception.Message)"
