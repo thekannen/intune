@@ -1,6 +1,7 @@
 {
   "scripts": [
-    "POSLockdown.ps1",
+    "POSUserPolicyDetector.ps1",
+    "POSApplyUserLockdown.ps1",    
     "Download-ScriptsFromGithub.ps1"
   ]
 }

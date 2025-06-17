@@ -2,7 +2,10 @@
 
 $basePath = "C:\ProgramData\SSA"
 $logFilePath = "$basePath\Logs\BootstrapperLog.txt"
-$folders = @("Scripts", "Secrets", "Logs")
+$folders = @("Scripts", "Secrets", "Logs", "LockdownQueue")
+
+#----------- !!REPLACE CLIENT SECRET AT TIME OF SCRIPT INSTALL!! ---------------
+$clientSecret = '!!REPLACE_WITH_CLIENT_SECRET!!'
 
 # --- Logging function ---
 function Write-Log {
@@ -33,6 +36,7 @@ try {
    # Secrets - No user access
     icacls "$basePath\Secrets" /inheritance:r
     icacls "$basePath\Secrets" /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
+    icacls "$basePath\Secrets" /remove "Users" "Authenticated Users" "Everyone"
 
     # Scripts - Read-only for users
     icacls "$basePath\Scripts" /inheritance:r
@@ -47,11 +51,10 @@ try {
 }
 
 # Create a secret file
-#----------- !!REPLACE CLIENT SECRET AT TIME OF SCRIPT INSTALL!! ---------------
-$clientSecret = 'YOUR-GRAPH-API-CLIENT-SECRET'
 try {
-    Set-Content -Path "$basePath\Secrets\GraphApiCred.txt" -Value $clientSecret -Force
-    Write-Log "Client secret file created successfully."
+    $secureString = ConvertTo-SecureString $clientSecretPlain -AsPlainText -Force
+    $secureString | ConvertFrom-SecureString -SecureKey $null -Scope LocalMachine | Out-File "$basePath\Secrets\GraphApiCred.txt"
+    Write-Log "Client secret encrypted and stored successfully."
 } catch {
     Write-Log "ERROR creating client secret file: $($_.Exception.Message)"
 }
@@ -67,15 +70,28 @@ try {
     Write-Log "ERROR downloading Download-ScriptsFromGithub.ps1: $($_.Exception.Message)"
 }
 
-# Create Scheduled Task (Run at Logon as USER)
+# Create Schedule Task to detect and cache logged in user (Run at Logon as USER)
 try {
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$basePath\Scripts\POSLockdown.ps1`""
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Limited
-    Register-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -TaskName "SSA_POSLockdown" -Description "Enforces device lockdown based on Azure group" -Force
-    Write-Log "Scheduled Task SSA_POSLockdown created successfully."
+    $userAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\POSUserPolicyDetector.ps1"'
+    $userTrigger = New-ScheduledTaskTrigger -AtLogOn
+
+    Register-ScheduledTask -TaskName "SSA - Detect POS Lockdown (User)" `
+        -Action $userAction -Trigger $userTrigger `
+        -GroupId "BUILTIN\Users" -RunLevel Limited `
+        -Description "Detects user lockdown group membership at logon" `
+        -Force
 } catch {
-    Write-Log "ERROR creating SSA_POSLockdown task: $($_.Exception.Message)"
+    Write-Log "ERROR creating SSA - Detect POS Lockdown (User) task: $($_.Exception.Message)"
+}
+
+# Create Scheduled Task to cache apply the settings (Run at Logon as SYSTEM)
+try{
+    $sysAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\SSA\POSApplyUserLockdown.ps1"'
+    $sysTrigger = New-ScheduledTaskTrigger -AtLogOn
+    Register-ScheduledTask -TaskName "SSA - Apply POS Lockdown (System)" `
+        -Action $sysAction -Trigger $sysTrigger -RunLevel Highest -User "SYSTEM" -Force
+} catch {
+    Write-Log "ERROR creating SSA - Apply POS Lockdown (System) task: $($_.Exception.Message)"
 }
 
 # Create Scheduled Task for Script Auto-Update
@@ -96,6 +112,12 @@ try {
 } catch {
     Write-Log "ERROR starting initial script download: $($_.Exception.Message)"
 }
+
+# Start tasks to set permissions immediately
+Start-ScheduledTask -TaskName "SSA - Detect POS Lockdown (User)"
+Start-ScheduledTask -TaskName "SSA - Apply POS Lockdown (System)"
+
+Write-Log "POS Lockdown tasks complete"
 
 # Final message
 Write-Log "SSA System setup complete."
