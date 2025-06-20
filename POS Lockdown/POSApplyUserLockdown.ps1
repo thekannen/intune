@@ -16,7 +16,7 @@ function Write-Log {
     "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-# Mapping of setting names to registry paths and value types
+# Map all policy options to their registry paths and value types
 $RegMap = @{
     # Explorer Policies
     'NoClose'             = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
@@ -36,11 +36,11 @@ $RegMap = @{
     'ExecutionPolicy'     = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="String" }
     # App Store lockdown
     'RemoveWindowsStore'  = @{ Path = "Software\Policies\Microsoft\WindowsStore";                         Type="DWord" }
-    # Edge Block (not implemented - see below)
+    # Edge Block (not implemented in registry)
     'NoEdge'              = @{ Path = $null; Type="DWord" }
 }
 
-# MAIN LOGIC
+# Main Logic
 Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
     $sid = $_.BaseName
     $decision = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
@@ -51,23 +51,19 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
         return
     }
 
-    # Read matrix for this user
-    $unit = "Unknown"
-    $role = "Unknown"
+    # Read matrix for this user (replace with dynamic logic as needed)
+    $unit = "CFZ"
+    $role = "POS"
     $policy = @{}
-
-    # (Optional: Read username/company/role from a cache or from registry/SID logic if needed)
 
     if (Test-Path $matrixPath) {
         try {
             $matrix = Get-Content $matrixPath | ConvertFrom-Json
-            # If you store unit/role somewhere, fetch it here. Otherwise, use default
-            # For this example, set defaults. Update to dynamically set as needed.
-            $unit = "CFZ"
-            $role = "POS"
+            # -- TODO: set $unit and $role dynamically based on SID, user, or cached values --
+            # (Here, for demo, set static. Replace with your company/jobtitle detection.)
             if ($matrix.PSObject.Properties.Name -contains $unit -and $matrix.$unit.PSObject.Properties.Name -contains $role) {
                 $policy = $matrix.$unit.$role
-                Write-Log "[INFO] [$sid] Using lockdown matrix policy for $unit/$role"
+                Write-Log "[INFO] [$sid] Using lockdown matrix policy for $unit/$role: $($policy | ConvertTo-Json -Compress)"
             } else {
                 Write-Log "[WARN] [$sid] No lockdown policy found for $unit/$role, skipping."
                 return
@@ -81,6 +77,7 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
         return
     }
 
+    # Apply all settings in the policy, including removing any no longer set
     foreach ($setting in $policy.GetEnumerator()) {
         $name = $setting.Key
         $value = $setting.Value
@@ -96,18 +93,22 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
                     Set-ItemProperty -Path $regPath -Name $name -Value $valueToSet -Type $valueKind -Force
                     Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at $regPath"
                 } else {
-                    Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed setting: $name from $regPath"
+                    # Only try to remove if present
+                    if ((Get-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue) -ne $null) {
+                        Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
+                        Write-Log "[INFO] [$sid] Removed setting: $name from $regPath"
+                    } else {
+                        Write-Log "[INFO] [$sid] $name was already unset at $regPath"
+                    }
                 }
             } catch {
                 Write-Log "[ERROR] [$sid] Error setting/removing $name : $($_.Exception.Message)"
             }
         }
         elseif ($name -eq "NoEdge") {
-            # Not a real registry lockdown; log that this is not implemented
+            # Not a real registry lockdown; log this and advise using AppLocker or SRP
             if ($value) {
-                Write-Log "[WARN] [$sid] Edge browser blocking is not implemented via registry. Use AppLocker or SRP for real blocking."
-                # Optionally, insert AppLocker/deny Edge logic here
+                Write-Log "[WARN] [$sid] Edge browser blocking not implemented via registry. Use AppLocker or SRP."
             }
         }
         else {
