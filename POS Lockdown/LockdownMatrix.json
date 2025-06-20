@@ -1,0 +1,10 @@
+{
+  "CFZ": {
+    "POS":     { "NoClose": true,  "NoControlPanel": true,  "NoEdge": true  },
+    "Kiosk":   { "NoClose": false, "NoControlPanel": true,  "NoEdge": true  }
+  },
+  "CTZ": {
+    "POS":     { "NoClose": true,  "NoControlPanel": true, "NoEdge": false },
+    "Kiosk":   { "NoClose": true,  "NoControlPanel": true,  "NoEdge": true  }
+  }
+}
