@@ -65,7 +65,7 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
             if ($line -match '^company:\s*(.+)$') { $company = $matches[1] }
             if ($line -match '^role:\s*(.+)$')    { $role = $matches[1] }
         }
-        Write-Log "[INFO] SID=$sid Company=$company Role=$role"
+        Write-Log "[INFO] SID=${sid} Company=${company} Role=${role}"
     } catch {
         Write-Log "[ERROR] Failed to read queue file $($_.FullName): $($_.Exception.Message)"
         return
@@ -81,9 +81,9 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
                 $matrix.$company.PSObject.Properties.Name -contains $role
             ) {
                 $policy = $matrix.$company.$role
-                Write-Log "[INFO] Using matrix lockdown policy for $company/$role"
+                Write-Log "[INFO] Using matrix lockdown policy for ${company}/${role}"
             } else {
-                Write-Log "[WARN] No lockdown policy found for $company/$role; applying most restrictive"
+                Write-Log "[WARN] No lockdown policy found for ${company}/${role}; applying most restrictive"
                 $policy = Get-MostRestrictivePolicy
             }
         } catch {
@@ -102,32 +102,32 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
 
         if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
             $regRelPath = $RegMap[$name].Path
-            $regPath = "Registry::HKEY_USERS\$sid\$regRelPath"
+            $regPath = "Registry::HKEY_USERS\${sid}\${regRelPath}"
             $valueKind = $RegMap[$name].Type
             try {
                 if ($value) {
                     if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
                     $valueToSet = if ($valueKind -eq "String") { "Restricted" } else { 1 }
                     Set-ItemProperty -Path $regPath -Name $name -Value $valueToSet -Type $valueKind -Force
-                    Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at $regPath"
+                    Write-Log "[INFO] [${sid}] Set ${name} = ${valueToSet} (${valueKind}) at ${regPath}"
                 } else {
                     Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed $name from $regPath"
+                    Write-Log "[INFO] [${sid}] Removed ${name} from ${regPath}"
                 }
             } catch {
-                Write-Log "[ERROR] [$sid] Error setting/removing $name: $($_.Exception.Message)"
+                Write-Log "[ERROR] [${sid}] Error setting/removing ${name}: $($_.Exception.Message)"
             }
         }
         elseif ($name -eq "NoEdge") {
             # Not a real registry lockdown; log that this is not implemented
             if ($value) {
-                Write-Log "[WARN] [$sid] Edge browser blocking is not implemented in registry. Use AppLocker/SRP for real blocking."
+                Write-Log "[WARN] [${sid}] Edge browser blocking is not implemented in registry. Use AppLocker/SRP for real blocking."
             }
         }
         else {
-            Write-Log "[WARN] [$sid] Unknown setting '$name' found in policy. No action taken."
+            Write-Log "[WARN] [${sid}] Unknown setting '${name}' found in policy. No action taken."
         }
     }
 
-    Write-Log "[INFO] Completed processing SID=$sid for company=$company role=$role"
+    Write-Log "[INFO] Completed processing SID=${sid} for company=${company} role=${role}"
 }
