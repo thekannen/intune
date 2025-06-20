@@ -1,14 +1,9 @@
-Start-Transcript -Path "C:\ProgramData\SSA\Logs\LastRunTranscript.log" -Append
-
 # ------------------------------
-# POSUserPolicyDetector.ps1
+# POSUserPolicyDetector.ps1 - Minimal JSON Test Version
 # ------------------------------
-# Detects user group, company, role and writes JSON decision for use by lockdown script
 
 $tenantId      = '31424738-b78c-4273-b299-844512ee2746'
 $clientId      = '231165ef-2a5c-4136-987f-4835086c089e'
-$posGroupId    = 'b1b0549e-92fa-4610-b058-611e440a4367'
-$adminExemptId = '6e615bdf-799a-405f-98ad-67fbf16a996b'
 $secretPath    = "C:\ProgramData\SSA\Secrets\GraphApiCred.dat"
 
 $userSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
@@ -16,14 +11,16 @@ $username = $env:USERNAME
 $domain = $env:USERDOMAIN
 $upn = "$username@thessagroup.com"
 
-$cacheDir    = "C:\ProgramData\SSA\LockdownQueue"
-$logFilePath = "C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log"
-$cachePath   = Join-Path $cacheDir "$userSid.txt"
+$cacheDir  = "C:\ProgramData\SSA\LockdownQueue"
+$logFilePath   = "C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log"
+$cachePath = Join-Path $cacheDir "$userSid.json"
 
 function Write-Log {
     param([string]$Message)
     $logFolder = Split-Path $logFilePath
-    if (-not (Test-Path $logFolder)) { New-Item -Path $logFolder -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path $logFolder)) {
+        New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
+    }
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
@@ -39,47 +36,40 @@ function Get-ClientSecret {
             )
             return [System.Text.Encoding]::UTF8.GetString($decrypted)
         } catch {
-            throw "Failed to decrypt client secret: $($_.Exception.Message)"
+            Write-Log "[ERROR] Failed to decrypt client secret: $($_.Exception.Message)"
+            return $null
         }
     } else {
-        throw "Client secret file not found at $secretPath"
+        Write-Log "[ERROR] Client secret file not found at $secretPath"
+        return $null
     }
 }
 
-function Write-DecisionToCache($obj) {
+function Write-DecisionToCache($decision) {
     try {
-        $json = $obj | ConvertTo-Json -Compress
-        $json | Out-File -FilePath $cachePath -Encoding utf8 -Force
-        Write-Log "[INFO] Decision cached at $cachePath: $json"
+        $decision | ConvertTo-Json | Set-Content -Path $cachePath -Encoding UTF8 -Force
+        Write-Log "[INFO] Decision cached at $cachePath: $($decision | ConvertTo-Json -Compress)"
     } catch {
         Write-Log "[ERROR] Failed to write decision to cache: $($_.Exception.Message)"
     }
 }
 
-Write-Log "[INFO] Policy detection started for $username (SID: $userSid, Domain: $domain)"
-
-if ($domain -eq $env:COMPUTERNAME) {
-    Write-Log "[INFO] Detected local account. Falling back to local group detection."
-    try {
-        $groupOutput = whoami /groups
-        if ($groupOutput -match "Administrators") {
-            Write-DecisionToCache @{ status = "EXEMPT" }
-            return
-        } else {
-            Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
-            return
-        }
-    } catch {
-        Write-Log "[WARN] Could not check local group: $($_.Exception.Message)"
-        Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
+# --------- Main Logic ---------
+try {
+    $groupOutput = whoami /groups
+    if ($groupOutput -match "Administrators") {
+        $decision = @{ Status = "EXEMPT" }
+        Write-DecisionToCache $decision
+        Write-Log "[INFO] Admin group detected for $username. User is exempt."
         return
     }
+} catch {
+    Write-Log "[WARN] Could not check admin group: $($_.Exception.Message)"
 }
 
-# Azure AD user check
 try {
     $clientSecret = Get-ClientSecret
-    Write-Log "[INFO] Client secret decrypted successfully."
+    if (!$clientSecret) { throw "No client secret!" }
 
     $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" -Method POST -Body @{
         client_id     = $clientId
@@ -88,45 +78,24 @@ try {
         grant_type    = "client_credentials"
     }
     $token = $tokenResponse.access_token
-    Write-Log "[INFO] Graph token acquired."
 
-    $body = @{ groupIds = @($posGroupId, $adminExemptId) } | ConvertTo-Json
-    $headers = @{
-        Authorization = "Bearer $token"
-        "Content-Type" = "application/json"
-    }
-    $response = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$upn/checkMemberGroups" -Method POST -Headers $headers -Body $body
-    Write-Log "[INFO] Group membership result: $($response.value -join ', ')"
+    $userInfo = Invoke-RestMethod -Headers @{Authorization = "Bearer $token"} `
+        -Uri "https://graph.microsoft.com/v1.0/users/$upn" `
+        -Method Get
 
-    if ($response.value -contains $adminExemptId) {
-        Write-DecisionToCache @{ status = "EXEMPT" }
-        return
-    } elseif ($response.value -contains $posGroupId) {
-        # Get company and job title for this user
-        try {
-            $userInfo = Invoke-RestMethod -Headers @{Authorization = "Bearer $token"} `
-                -Uri "https://graph.microsoft.com/v1.0/users/$upn" `
-                -Method Get
-            $unit = $userInfo.companyName
-            $role = $userInfo.jobTitle
-            if ([string]::IsNullOrWhiteSpace($unit) -or [string]::IsNullOrWhiteSpace($role)) {
-                Write-Log "[WARN] User $upn missing companyName or jobTitle in Entra. Defaulting to most restrictive."
-                Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
-            } else {
-                Write-Log "[INFO] $username mapped to company='$unit', role='$role'."
-                Write-DecisionToCache @{ status = "LOCKDOWN"; company = $unit; role = $role }
-            }
-        } catch {
-            Write-Log "[ERROR] Failed to fetch company/role for $username: $($_.Exception.Message)"
-            Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
-        }
-        return
+    $unit = $userInfo.companyName
+    $role = $userInfo.jobTitle
+
+    if ([string]::IsNullOrWhiteSpace($unit) -or [string]::IsNullOrWhiteSpace($role)) {
+        Write-Log "[WARN] User $upn missing companyName or jobTitle in Entra. Defaulting to most restrictive."
+        $decision = @{ Status = "LOCKDOWN"; Unit = "Unknown"; Role = "Unknown" }
     } else {
-        Write-DecisionToCache @{ status = "NONE" }
-        return
+        $decision = @{ Status = "LOCKDOWN"; Unit = $unit; Role = $role }
+        Write-Log "[INFO] $username mapped to Unit='$unit', Role='$role'."
     }
+    Write-DecisionToCache $decision
 } catch {
-    Write-Log "[WARN] Graph query failed: $($_.Exception.Message)"
-    Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
+    Write-Log "[ERROR] Failed to get user attributes or write decision: $($_.Exception.Message)"
+    $decision = @{ Status = "LOCKDOWN"; Unit = "Unknown"; Role = "Unknown" }
+    Write-DecisionToCache $decision
 }
-Stop-Transcript
