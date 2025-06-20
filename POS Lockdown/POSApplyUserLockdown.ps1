@@ -10,7 +10,7 @@
 $LockdownOptions = @{
     # --- File Explorer and Start Menu restrictions ---
     'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' = @{
-        'NoClose' = $false              # true disables Shut down, Restart, Sleep from Start menu; false enables them
+        'NoClose' = $true              # true disables Shut down, Restart, Sleep from Start menu; false enables them
         'NoControlPanel' = $true        # true blocks access to Control Panel and Settings app
         'NoRun' = $true                 # true hides Run dialog (Win + R)
         'NoViewContextMenu' = $true     # true disables right-click context menus in Explorer
