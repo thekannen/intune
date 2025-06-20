@@ -18,7 +18,7 @@
       "NoEdge": true
     },
     "Kiosk": {
-      "NoClose": true,
+      "NoClose": false,
       "NoControlPanel": false,
       "NoRun": false,
       "NoViewContextMenu": true,
@@ -55,7 +55,7 @@
     },
     "Kiosk": {
       "NoClose": true,
-      "NoControlPanel": true,
+      "NoControlPanel": false,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
