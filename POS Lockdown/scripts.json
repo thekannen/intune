@@ -2,6 +2,7 @@
   "scripts": [
     "POSUserPolicyDetector.ps1",
     "POSApplyUserLockdown.ps1",    
-    "Download-ScriptsFromGithub.ps1"
+    "Download-ScriptsFromGithub.ps1",
+    "LockdownMatrix.json"
   ]
 }
