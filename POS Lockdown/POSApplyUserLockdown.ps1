@@ -1,3 +1,5 @@
+Start-Transcript -Path "C:\ProgramData\SSA\Logs\LastRunTranscript.log" -Append
+
 # ------------------------------
 # POSApplyUserLockdown.ps1
 # ------------------------------
@@ -136,3 +138,5 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
 
     Write-Log "[INFO] Completed processing SID=$sid with matrix decision."
 }
+
+Stop-Transcript
