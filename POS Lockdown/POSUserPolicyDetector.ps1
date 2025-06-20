@@ -1,34 +1,27 @@
 # ------------------------------
 # POSUserPolicyDetector.ps1
 # ------------------------------
+# Detects user group, company, role and writes JSON decision for use by lockdown script
 
-# Configuration
 $tenantId      = '31424738-b78c-4273-b299-844512ee2746'
 $clientId      = '231165ef-2a5c-4136-987f-4835086c089e'
 $posGroupId    = 'b1b0549e-92fa-4610-b058-611e440a4367'
 $adminExemptId = '6e615bdf-799a-405f-98ad-67fbf16a996b'
 $secretPath    = "C:\ProgramData\SSA\Secrets\GraphApiCred.dat"
 
-# Detect user info
 $userSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
 $username = $env:USERNAME
 $domain = $env:USERDOMAIN
 $upn = "$username@thessagroup.com"
 
-# Paths
-$cacheDir  = "C:\ProgramData\SSA\LockdownQueue"
-$logFilePath   = "C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log"
-$cachePath = Join-Path $cacheDir "$userSid.txt"
+$cacheDir    = "C:\ProgramData\SSA\LockdownQueue"
+$logFilePath = "C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log"
+$cachePath   = Join-Path $cacheDir "$userSid.txt"
 
-# --- Logging function ---
 function Write-Log {
     param([string]$Message)
-
     $logFolder = Split-Path $logFilePath
-    if (-not (Test-Path $logFolder)) {
-        New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
-    }
-
+    if (-not (Test-Path $logFolder)) { New-Item -Path $logFolder -ItemType Directory -Force | Out-Null }
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
@@ -51,43 +44,37 @@ function Get-ClientSecret {
     }
 }
 
-function Write-DecisionToCache($status) {
+function Write-DecisionToCache($obj) {
     try {
-        $status | Out-File -FilePath $cachePath -Encoding ASCII -Force
-        Write-Log "[INFO] [$status] Decision cached at $cachePath"
+        $json = $obj | ConvertTo-Json -Compress
+        $json | Out-File -FilePath $cachePath -Encoding utf8 -Force
+        Write-Log "[INFO] Decision cached at $cachePath: $json"
     } catch {
         Write-Log "[ERROR] Failed to write decision to cache: $($_.Exception.Message)"
     }
 }
 
-function DetectLocalGroup() {
+Write-Log "[INFO] Policy detection started for $username (SID: $userSid, Domain: $domain)"
+
+if ($domain -eq $env:COMPUTERNAME) {
+    Write-Log "[INFO] Detected local account. Falling back to local group detection."
     try {
         $groupOutput = whoami /groups
         if ($groupOutput -match "Administrators") {
-            Write-Log "[INFO] Local group match found: Administrators"
-            return "EXEMPT"
+            Write-DecisionToCache @{ status = "EXEMPT" }
+            return
+        } else {
+            Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
+            return
         }
-        if ($groupOutput -match "Users") {
-            Write-Log "[INFO] Local group match found: Users"
-            return "LOCKDOWN"
-        }        
     } catch {
-        Write-Log "[WARN] Failed to check local group membership: $($_.Exception.Message)"
+        Write-Log "[WARN] Could not check local group: $($_.Exception.Message)"
+        Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
+        return
     }
-    return "NONE"
 }
 
-# --- Main Logic ---
-Write-Log "[INFO] Policy detection started for $username (SID: $userSid, Domain: $domain)"
-
-# LOCAL ACCOUNT HANDLING
-if ($domain -eq $env:COMPUTERNAME) {
-    Write-Log "[INFO] Detected local account. Falling back to local group detection."
-    $status = DetectLocalGroup
-    Write-DecisionToCache $status
-    return
-}
-
+# Azure AD user check
 try {
     $clientSecret = Get-ClientSecret
     Write-Log "[INFO] Client secret decrypted successfully."
@@ -109,21 +96,34 @@ try {
     $response = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$upn/checkMemberGroups" -Method POST -Headers $headers -Body $body
     Write-Log "[INFO] Group membership result: $($response.value -join ', ')"
 
-    $status = "NONE"
-    if ($response.value -contains $adminExemptId) { $status = "EXEMPT" }
-    elseif ($response.value -contains $posGroupId) { $status = "LOCKDOWN" }
-
-    Write-DecisionToCache $status
-}
-catch {
-    Write-Log "[WARN] Graph query failed: $($_.Exception.Message)"
-
-    if (Test-Path $cachePath) {
-        $cached = Get-Content $cachePath -ErrorAction SilentlyContinue | Select-Object -First 1
-        Write-Log "[INFO] Graph offline. Falling back to cached decision: $cached"
+    if ($response.value -contains $adminExemptId) {
+        Write-DecisionToCache @{ status = "EXEMPT" }
+        return
+    } elseif ($response.value -contains $posGroupId) {
+        # Get company and job title for this user
+        try {
+            $userInfo = Invoke-RestMethod -Headers @{Authorization = "Bearer $token"} `
+                -Uri "https://graph.microsoft.com/v1.0/users/$upn" `
+                -Method Get
+            $unit = $userInfo.companyName
+            $role = $userInfo.jobTitle
+            if ([string]::IsNullOrWhiteSpace($unit) -or [string]::IsNullOrWhiteSpace($role)) {
+                Write-Log "[WARN] User $upn missing companyName or jobTitle in Entra. Defaulting to most restrictive."
+                Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
+            } else {
+                Write-Log "[INFO] $username mapped to company='$unit', role='$role'."
+                Write-DecisionToCache @{ status = "LOCKDOWN"; company = $unit; role = $role }
+            }
+        } catch {
+            Write-Log "[ERROR] Failed to fetch company/role for $username: $($_.Exception.Message)"
+            Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
+        }
+        return
     } else {
-        Write-Log "[INFO] No cache available. Defaulting to NONE"
-        $cached = "NONE"
+        Write-DecisionToCache @{ status = "NONE" }
+        return
     }
-    Write-DecisionToCache $cached
+} catch {
+    Write-Log "[WARN] Graph query failed: $($_.Exception.Message)"
+    Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
 }
