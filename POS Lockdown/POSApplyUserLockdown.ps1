@@ -13,7 +13,27 @@ function Write-Log {
     "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-# Mapping of setting names to registry paths and value types
+function Get-MostRestrictivePolicy {
+    return @{
+        NoClose             = $true
+        NoControlPanel      = $true
+        NoRun               = $true
+        NoViewContextMenu   = $true
+        NoFileMenu          = $true
+        NoFolderOptions     = $true
+        NoSetFolders        = $true
+        NoSetTaskbar        = $true
+        NoSMHelp            = $true
+        DisableRegistryTools= $true
+        DisableCMD          = $true
+        EnableScripts       = $false
+        ExecutionPolicy     = $true
+        RemoveWindowsStore  = $true
+        NoEdge              = $true
+    }
+}
+
+# Registry mapping for each setting
 $RegMap = @{
     'NoClose'             = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
     'NoControlPanel'      = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
@@ -24,57 +44,58 @@ $RegMap = @{
     'NoSetFolders'        = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
     'NoSetTaskbar'        = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
     'NoSMHelp'            = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
-    'DisableRegistryTools' = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\System";        Type="DWord" }
+    'DisableRegistryTools'= @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\System";        Type="DWord" }
     'DisableCMD'          = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="DWord" }
     'EnableScripts'       = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="DWord" }
     'ExecutionPolicy'     = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="String" }
     'RemoveWindowsStore'  = @{ Path = "Software\Policies\Microsoft\WindowsStore";                         Type="DWord" }
-    'NoEdge'              = @{ Path = $null; Type="DWord" } # Not implemented; just logs warning
+    'NoEdge'              = @{ Path = $null; Type="DWord" }
 }
 
 # MAIN LOGIC
 Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
     $sid = $_.BaseName
+    $company = $null
+    $role = $null
+
+    # Parse the queue file (company/role)
     try {
-        $decisionRaw = Get-Content $_.FullName -ErrorAction SilentlyContinue | Out-String | ConvertFrom-Json
+        $lines = Get-Content $_.FullName -ErrorAction Stop
+        foreach ($line in $lines) {
+            if ($line -match '^company:\s*(.+)$') { $company = $matches[1] }
+            if ($line -match '^role:\s*(.+)$')    { $role = $matches[1] }
+        }
+        Write-Log "[INFO] SID=$sid Company=$company Role=$role"
     } catch {
-        Write-Log "[ERROR] [$sid] Could not parse decision file as JSON: $($_.Exception.Message)"
-        return
-    }
-    $status = $decisionRaw.Status
-    Write-Log "[INFO] Processing SID=$sid; Status=$status"
-
-    if ($status -eq 'EXEMPT') {
-        Write-Log "[INFO] [$sid] Admin detected. No lockdown applied."
+        Write-Log "[ERROR] Failed to read queue file $($_.FullName): $($_.Exception.Message)"
         return
     }
 
-    $unit = $decisionRaw.Unit
-    $role = $decisionRaw.Role
-    if (-not $unit -or -not $role) {
-        Write-Log "[WARN] [$sid] Missing unit or role in decision file, using Unknown/Unknown."
-        $unit = "Unknown"; $role = "Unknown"
-    }
-
+    # Load lockdown matrix
+    $policy = $null
     if (Test-Path $matrixPath) {
         try {
             $matrix = Get-Content $matrixPath | ConvertFrom-Json
-            if ($matrix.PSObject.Properties.Name -contains $unit -and $matrix.$unit.PSObject.Properties.Name -contains $role) {
-                $policy = $matrix.$unit.$role
-                Write-Log "[INFO] [$sid] Matrix lockdown for $unit/$role"
+            if ($company -and $role -and
+                $matrix.PSObject.Properties.Name -contains $company -and
+                $matrix.$company.PSObject.Properties.Name -contains $role
+            ) {
+                $policy = $matrix.$company.$role
+                Write-Log "[INFO] Using matrix lockdown policy for $company/$role"
             } else {
-                Write-Log "[WARN] [$sid] No lockdown policy for $unit/$role. Skipping user."
-                return
+                Write-Log "[WARN] No lockdown policy found for $company/$role; applying most restrictive"
+                $policy = Get-MostRestrictivePolicy
             }
         } catch {
-            Write-Log "[ERROR] [$sid] Failed to parse lockdown matrix: $($_.Exception.Message)"
-            return
+            Write-Log "[ERROR] Failed to parse lockdown matrix: $($_.Exception.Message)"
+            $policy = Get-MostRestrictivePolicy
         }
     } else {
-        Write-Log "[ERROR] [$sid] Matrix not found at $matrixPath"
-        return
+        Write-Log "[ERROR] Lockdown matrix not found at $matrixPath; applying most restrictive"
+        $policy = Get-MostRestrictivePolicy
     }
 
+    # Apply each policy item
     foreach ($setting in $policy.GetEnumerator()) {
         $name = $setting.Key
         $value = $setting.Value
@@ -91,19 +112,22 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
                     Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at $regPath"
                 } else {
                     Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed setting: $name from $regPath"
+                    Write-Log "[INFO] [$sid] Removed $name from $regPath"
                 }
             } catch {
-                Write-Log "[ERROR] [$sid] Error setting/removing $name : $($_.Exception.Message)"
+                Write-Log "[ERROR] [$sid] Error setting/removing $name: $($_.Exception.Message)"
             }
-        } elseif ($name -eq "NoEdge") {
+        }
+        elseif ($name -eq "NoEdge") {
+            # Not a real registry lockdown; log that this is not implemented
             if ($value) {
-                Write-Log "[WARN] [$sid] NoEdge is not implemented (see docs for AppLocker/SRP)"
+                Write-Log "[WARN] [$sid] Edge browser blocking is not implemented in registry. Use AppLocker/SRP for real blocking."
             }
-        } else {
-            Write-Log "[WARN] [$sid] Unknown setting '$name'."
+        }
+        else {
+            Write-Log "[WARN] [$sid] Unknown setting '$name' found in policy. No action taken."
         }
     }
 
-    Write-Log "[INFO] Completed processing SID=$sid with matrix policy."
+    Write-Log "[INFO] Completed processing SID=$sid for company=$company role=$role"
 }
