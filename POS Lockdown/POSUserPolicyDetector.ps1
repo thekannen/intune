@@ -71,7 +71,7 @@ try {
         "role: $role"
     ) | Out-File -FilePath $queueFile -Encoding ASCII -Force
 
-    Write-Log "Wrote queue file for $userSid: company=$company, role=$role"
+    Write-Log "Wrote queue file for `${userSid}`: company=$company, role=$role"
 } catch {
     Write-Log "ERROR: $($_.Exception.Message)"
 }
