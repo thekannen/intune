@@ -1,78 +1,93 @@
 # ------------------------------
 # POSApplyUserLockdown.ps1
 # ------------------------------
-# SYSTEM-context script that applies lockdown or clears it
-# based on per-user SID cache written by the user login script.
+# SYSTEM-context script to apply or clear lockdown based on per-user SID cache.
+# Treats each setting as a toggle: true => apply policy, false => remove if present.
+# Works uniformly on Windows 10 & 11.
 # ------------------------------
 
-# --- CONFIGURABLE LOCKDOWN SETTINGS ---
+# --- CONFIGURABLE LOCKDOWN SETTINGS (true=apply, false=remove) ---
 $LockdownOptions = @{
-    # Disables "Shut down", "Restart", "Sleep", etc. in Start menu
-    NoClose = $true
+    # --- File Explorer and Start Menu restrictions ---
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' = @{
+        'NoClose' = $false              # true disables Shut down, Restart, Sleep from Start menu; false enables them
+        'NoControlPanel' = $true        # true blocks access to Control Panel and Settings app
+        'NoRun' = $true                 # true hides Run dialog (Win + R)
+        'NoViewContextMenu' = $true     # true disables right-click context menus in Explorer
+        'NoFileMenu' = $true            # true hides the File menu in Explorer windows
+        'NoFolderOptions' = $true       # true disables access to Folder Options (e.g. view hidden files)
+        'NoSetFolders' = $true          # true prevents user from changing system folders like Documents
+        'NoSetTaskbar' = $true          # true blocks taskbar customization (e.g. pinning, resizing)
+        'NoSMHelp' = $true              # true hides the Help option in the Start menu
+    }
 
-    # Blocks Control Panel and Settings app (also blocks Network UI)
-    NoControlPanel = $true
+    # --- System-level tools lockdown ---
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System' = @{
+        'DisableRegistryTools' = $true  # true disables regedit.exe (Registry Editor)
+    }
 
-    # Add more registry options below if needed:
-    # "SomeOtherPolicyName" = $true/false
+    # --- Command-line and scripting restrictions ---
+    'HKCU:\Software\Policies\Microsoft\Windows\System' = @{
+        'DisableCMD' = $true            # true disables Command Prompt entirely
+        'EnableScripts' = $false        # false disables Windows Script Host (blocks .vbs/.js/.ps1 execution)
+        'ExecutionPolicy' = $true       # true sets PowerShell to restricted mode (local enforcement required)
+    }
+
+    # --- App Store lockdown ---
+    'HKCU:\Software\Policies\Microsoft\WindowsStore' = @{
+        'RemoveWindowsStore' = $true    # true disables Microsoft Store app for this user
+    }
 }
 
-# --- PATH SETUP ---
 $queuePath = "C:\ProgramData\SSA\LockdownQueue"
-$logFilePath   = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
+$logFilePath = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
 
-# --- Logging function ---
 function Write-Log {
     param([string]$Message)
-
-    $logFolder = Split-Path $logFilePath
-    if (-not (Test-Path $logFolder)) {
-        New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
-    }
-
-    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
+    $folder = Split-Path $logFilePath
+    if (!(Test-Path $folder)) { New-Item -Path $folder -ItemType Directory -Force | Out-Null }
+    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" |
+        Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-# --- PROCESS EACH USER POLICY DECISION ---
-Get-ChildItem -Path $queuePath -Filter "*.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue |
+ForEach-Object {
     $sid = $_.BaseName
-    $decision = Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1
-    $regPath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    $decision = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+    Write-Log "[INFO] Processing SID=$sid; Decision=$decision"
 
-    try {
-        if (-not (Test-Path $regPath)) {
-            New-Item -Path $regPath -Force | Out-Null
-        }
+    foreach ($hivePath in $LockdownOptions.Keys) {
+        # Convert HKCU: to HKEY_USERS\SID (raw string for .NET)
+        $keyName = "HKEY_USERS\$sid" + $hivePath.Substring(5)  # Removes 'HKCU:' prefix
 
-        if ($decision -eq "LOCKDOWN") {
-            foreach ($setting in $LockdownOptions.GetEnumerator()) {
-                if ($setting.Value) {
-                    try {
-                        Set-ItemProperty -Path $regPath -Name $setting.Key -Value 1 -Type DWord -Force
-                        Write-Log "[INFO] [$sid] Applied: $($setting.Key)=1"
-                    } catch {
-                        Write-Log "[ERROR] [$sid] Failed to apply $($setting.Key) : $($_.Exception.Message)"
+        foreach ($settingKvp in $LockdownOptions[$hivePath].GetEnumerator()) {
+            $name = $settingKvp.Key
+            $value = $settingKvp.Value
+            $apply = ($decision -eq 'LOCKDOWN')
+
+            try {
+                if ($apply) {
+                    if (-not (Test-Path ("Registry::" + $keyName))) {
+                        New-Item -Path ("Registry::" + $keyName) -Force | Out-Null
+                        Write-Log "[INFO] Created registry key: Registry::$keyName"
                     }
-                }
-            }
-            Write-Log "[INFO] [$sid] Lockdown applied."
-        }
-        else {
-            foreach ($setting in $LockdownOptions.Keys) {
-                try {
-                    Remove-ItemProperty -Path $regPath -Name $setting -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed: $setting"
-                } catch {
-                    Write-Log "[WARN] [$sid] Failed to remove $setting : $($_.Exception.Message)"
-                }
-            }
-            Write-Log "[INFO] [$sid] Lockdown removed (status: $decision)."
-        }
 
-        Write-Log "[INFO] [$sid] Lockdown decision processed and retained for caching."
+                    $valueKind = if ($name -eq 'ExecutionPolicy') { 'String' } else { 'DWord' }
+                    $valueToSet = if ($value) { 1 } else { 0 }
+
+                    Set-ItemProperty -Path ("Registry::" + $keyName) -Name $name -Value $valueToSet -Type $valueKind -Force
+                    Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at Registry::$keyName"
+                }
+                else {
+                    Remove-ItemProperty -Path ("Registry::" + $keyName) -Name $name -ErrorAction SilentlyContinue
+                    Write-Log "[INFO] [$sid] Removed setting: $name (if it existed)"
+                }
+            }
+            catch {
+                Write-Log "[ERROR] [$sid] Error setting/removing $name : $($_.Exception.Message)"
+            }
+        }
     }
-    catch {
-        Write-Log "[ERROR] [$sid] General failure: $($_.Exception.Message)"
-    }
+
+    Write-Log "[INFO] Completed processing SID=$sid with decision=$decision"
 }
