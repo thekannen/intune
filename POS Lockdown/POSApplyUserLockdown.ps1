@@ -1,93 +1,154 @@
 # ------------------------------
 # POSApplyUserLockdown.ps1
 # ------------------------------
-# SYSTEM-context script to apply or clear lockdown based on per-user SID cache.
-# Treats each setting as a toggle: true => apply policy, false => remove if present.
+# SYSTEM-context script to apply or clear lockdown based on per-user SID cache and matrix.
 # Works uniformly on Windows 10 & 11.
 # ------------------------------
 
-# --- CONFIGURABLE LOCKDOWN SETTINGS (true=apply, false=remove) ---
-$LockdownOptions = @{
-    # --- File Explorer and Start Menu restrictions ---
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' = @{
-        'NoClose' = $true              # true disables Shut down, Restart, Sleep from Start menu; false enables them
-        'NoControlPanel' = $true        # true blocks access to Control Panel and Settings app
-        'NoRun' = $true                 # true hides Run dialog (Win + R)
-        'NoViewContextMenu' = $true     # true disables right-click context menus in Explorer
-        'NoFileMenu' = $true            # true hides the File menu in Explorer windows
-        'NoFolderOptions' = $true       # true disables access to Folder Options (e.g. view hidden files)
-        'NoSetFolders' = $true          # true prevents user from changing system folders like Documents
-        'NoSetTaskbar' = $true          # true blocks taskbar customization (e.g. pinning, resizing)
-        'NoSMHelp' = $true              # true hides the Help option in the Start menu
-    }
-
-    # --- System-level tools lockdown ---
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System' = @{
-        'DisableRegistryTools' = $true  # true disables regedit.exe (Registry Editor)
-    }
-
-    # --- Command-line and scripting restrictions ---
-    'HKCU:\Software\Policies\Microsoft\Windows\System' = @{
-        'DisableCMD' = $true            # true disables Command Prompt entirely
-        'EnableScripts' = $false        # false disables Windows Script Host (blocks .vbs/.js/.ps1 execution)
-        'ExecutionPolicy' = $true       # true sets PowerShell to restricted mode (local enforcement required)
-    }
-
-    # --- App Store lockdown ---
-    'HKCU:\Software\Policies\Microsoft\WindowsStore' = @{
-        'RemoveWindowsStore' = $true    # true disables Microsoft Store app for this user
-    }
-}
-
-$queuePath = "C:\ProgramData\SSA\LockdownQueue"
+$tenantId   = '31424738-b78c-4273-b299-844512ee2746'
+$clientId   = '231165ef-2a5c-4136-987f-4835086c089e'
+$secretPath = "C:\ProgramData\SSA\Secrets\GraphApiCred.dat"
+$matrixPath = "C:\ProgramData\SSA\Scripts\LockdownMatrix.json"
+$queuePath  = "C:\ProgramData\SSA\LockdownQueue"
 $logFilePath = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
 
 function Write-Log {
     param([string]$Message)
     $folder = Split-Path $logFilePath
     if (!(Test-Path $folder)) { New-Item -Path $folder -ItemType Directory -Force | Out-Null }
-    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" |
-        Out-File -FilePath $logFilePath -Append -Encoding utf8
+    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue |
-ForEach-Object {
+function Get-ClientSecret {
+    if (Test-Path $secretPath) {
+        try {
+            Add-Type -AssemblyName System.Security
+            $b64 = Get-Content -Path $secretPath -Raw
+            $encrypted = [Convert]::FromBase64String($b64)
+            $decrypted = [System.Security.Cryptography.ProtectedData]::Unprotect(
+                $encrypted, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
+            )
+            return [System.Text.Encoding]::UTF8.GetString($decrypted)
+        } catch {
+            Write-Log "[ERROR] Failed to decrypt client secret: $($_.Exception.Message)"
+            return $null
+        }
+    } else {
+        Write-Log "[ERROR] Client secret file not found at $secretPath"
+        return $null
+    }
+}
+
+function Get-GraphUserInfo($username) {
+    try {
+        $clientSecret = Get-ClientSecret
+        if (!$clientSecret) { return $null }
+
+        $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" -Method POST -Body @{
+            client_id     = $clientId
+            scope         = "https://graph.microsoft.com/.default"
+            client_secret = $clientSecret
+            grant_type    = "client_credentials"
+        }
+        $token = $tokenResponse.access_token
+        $upn = "$username@thessagroup.com"
+        $userInfo = Invoke-RestMethod -Headers @{Authorization = "Bearer $token"} `
+            -Uri "https://graph.microsoft.com/v1.0/users/$upn" `
+            -Method Get
+        return $userInfo
+    } catch {
+        Write-Log "[ERROR] Failed to get user info from Graph for $username: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Get-MostRestrictivePolicy {
+    # Everything set to true (most restricted)
+    return @{
+        NoClose = $true
+        NoControlPanel = $true
+        NoEdge = $true
+    }
+}
+
+# Main Loop
+Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
     $sid = $_.BaseName
     $decision = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
     Write-Log "[INFO] Processing SID=$sid; Decision=$decision"
 
-    foreach ($hivePath in $LockdownOptions.Keys) {
-        # Convert HKCU: to HKEY_USERS\SID (raw string for .NET)
-        $keyName = "HKEY_USERS\$sid" + $hivePath.Substring(5)  # Removes 'HKCU:' prefix
-
-        foreach ($settingKvp in $LockdownOptions[$hivePath].GetEnumerator()) {
-            $name = $settingKvp.Key
-            $value = $settingKvp.Value
-            $apply = ($decision -eq 'LOCKDOWN')
-
-            try {
-                if ($apply) {
-                    if (-not (Test-Path ("Registry::" + $keyName))) {
-                        New-Item -Path ("Registry::" + $keyName) -Force | Out-Null
-                        Write-Log "[INFO] Created registry key: Registry::$keyName"
-                    }
-
-                    $valueKind = if ($name -eq 'ExecutionPolicy') { 'String' } else { 'DWord' }
-                    $valueToSet = if ($value) { 1 } else { 0 }
-
-                    Set-ItemProperty -Path ("Registry::" + $keyName) -Name $name -Value $valueToSet -Type $valueKind -Force
-                    Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at Registry::$keyName"
-                }
-                else {
-                    Remove-ItemProperty -Path ("Registry::" + $keyName) -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed setting: $name (if it existed)"
-                }
-            }
-            catch {
-                Write-Log "[ERROR] [$sid] Error setting/removing $name : $($_.Exception.Message)"
-            }
-        }
+    if ($decision -eq 'EXEMPT') {
+        Write-Log "[INFO] [$sid] Admin detected. No lockdown applied."
+        return
     }
 
-    Write-Log "[INFO] Completed processing SID=$sid with decision=$decision"
+    # Default: most restrictive policy in case of failure
+    $policy = Get-MostRestrictivePolicy
+    $unit = "Unknown"
+    $role = "Unknown"
+    $username = $null
+
+    # Try to get username for SID (from registry, fallback to sid)
+    try {
+        $userKey = "Registry::HKEY_USERS\$sid\Volatile Environment"
+        if (Test-Path $userKey) {
+            $username = (Get-ItemProperty -Path $userKey -Name USERNAME -ErrorAction Stop).USERNAME
+        } else {
+            Write-Log "[WARN] Could not find username for SID=$sid; using SID as fallback"
+            $username = $sid
+        }
+    } catch {
+        Write-Log "[WARN] Could not resolve username for SID=$sid: $($_.Exception.Message)"
+        $username = $sid
+    }
+
+    # Get company and jobtitle if possible
+    $userInfo = Get-GraphUserInfo $username
+    if ($userInfo -and $userInfo.companyName -and $userInfo.jobTitle) {
+        $unit = $userInfo.companyName
+        $role = $userInfo.jobTitle
+        Write-Log "[INFO] [$sid] User attributes: companyName=$unit, jobTitle=$role"
+    } else {
+        Write-Log "[WARN] [$sid] Could not get companyName or jobTitle, using most restrictive policy."
+    }
+
+    # Try to load the lockdown matrix and get correct policy
+    if (Test-Path $matrixPath) {
+        try {
+            $matrix = Get-Content $matrixPath | ConvertFrom-Json
+            if ($matrix.PSObject.Properties.Name -contains $unit -and $matrix.$unit.PSObject.Properties.Name -contains $role) {
+                $policy = $matrix.$unit.$role
+                Write-Log "[INFO] [$sid] Found lockdown policy in matrix for $unit/$role"
+            } else {
+                Write-Log "[WARN] [$sid] No policy in matrix for $unit/$role; using most restrictive"
+            }
+        } catch {
+            Write-Log "[ERROR] [$sid] Failed to parse lockdown matrix: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Log "[ERROR] [$sid] Lockdown matrix not found at $matrixPath"
+    }
+
+    # Apply the lockdown policy
+    $regPath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+    }
+
+    foreach ($setting in $policy.GetEnumerator()) {
+        $name = $setting.Key
+        $value = $setting.Value
+        try {
+            if ($value) {
+                Set-ItemProperty -Path $regPath -Name $name -Value 1 -Type DWord -Force
+                Write-Log "[INFO] [$sid] Applied: $name=1"
+            } else {
+                Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
+                Write-Log "[INFO] [$sid] Removed: $name"
+            }
+        } catch {
+            Write-Log "[ERROR] [$sid] Failed to set $name: $($_.Exception.Message)"
+        }
+    }
+    Write-Log "[INFO] [$sid] Lockdown applied for $unit/$role."
 }
