@@ -1,3 +1,5 @@
+Start-Transcript -Path "C:\ProgramData\SSA\Logs\LastRunTranscript.log" -Append
+
 # ------------------------------
 # POSUserPolicyDetector.ps1
 # ------------------------------
@@ -127,3 +129,4 @@ try {
     Write-Log "[WARN] Graph query failed: $($_.Exception.Message)"
     Write-DecisionToCache @{ status = "LOCKDOWN"; company = "Unknown"; role = "Unknown" }
 }
+Stop-Transcript
