@@ -1,95 +1,138 @@
 # ------------------------------
 # POSApplyUserLockdown.ps1
 # ------------------------------
-# SYSTEM-context script to apply or clear lockdown based on per-user SID cache.
-# Treats each setting as a toggle: true => apply policy, false => remove if present.
-# Works uniformly on Windows 10 & 11.
-# ------------------------------
-
-# --- CONFIGURABLE LOCKDOWN SETTINGS (true=apply, false=remove) ---
-$LockdownOptions = @{
-    # --- File Explorer and Start Menu restrictions ---
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' = @{
-        'NoClose' = $false              # true disables Shut down, Restart, Sleep from Start menu; false enables them
-        'NoControlPanel' = $true        # true blocks access to Control Panel and Settings app
-        'NoRun' = $true                 # true hides Run dialog (Win + R)
-        'NoViewContextMenu' = $true     # true disables right-click context menus in Explorer
-        'NoFileMenu' = $true            # true hides the File menu in Explorer windows
-        'NoFolderOptions' = $true       # true disables access to Folder Options (e.g. view hidden files)
-        'NoSetFolders' = $true          # true prevents user from changing system folders like Documents
-        'NoSetTaskbar' = $true          # true blocks taskbar customization (e.g. pinning, resizing)
-        'NoSMHelp' = $true              # true hides the Help option in the Start menu
-    }
-
-    # --- System-level tools lockdown ---
-    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System' = @{
-        'DisableRegistryTools' = $true  # true disables regedit.exe (Registry Editor)
-    }
-
-    # --- Command-line and scripting restrictions ---
-    'HKCU:\Software\Policies\Microsoft\Windows\System' = @{
-        'DisableCMD' = $true            # true disables Command Prompt entirely
-        'EnableScripts' = $false        # false disables Windows Script Host (blocks .vbs/.js/.ps1 execution)
-        'ExecutionPolicy' = $true       # true sets PowerShell to restricted mode (local enforcement required)
-    }
-
-    # --- App Store lockdown ---
-    'HKCU:\Software\Policies\Microsoft\WindowsStore' = @{
-        'RemoveWindowsStore' = $true    # true disables Microsoft Store app for this user
-    }
-}
-
-$queuePath = "C:\ProgramData\SSA\LockdownQueue"
+$matrixPath  = "C:\ProgramData\SSA\Scripts\LockdownMatrix.json"
+$queuePath   = "C:\ProgramData\SSA\LockdownQueue"
 $logFilePath = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
 
 function Write-Log {
     param([string]$Message)
     $folder = Split-Path $logFilePath
     if (!(Test-Path $folder)) { New-Item -Path $folder -ItemType Directory -Force | Out-Null }
-    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" |
-        Out-File -FilePath $logFilePath -Append -Encoding utf8
+    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue |
-ForEach-Object {
+$RegMap = @{
+    # Explorer Policies
+    'NoClose'           = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoControlPanel'    = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoRun'             = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoViewContextMenu' = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoFileMenu'        = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoFolderOptions'   = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoSetFolders'      = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoSetTaskbar'      = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    'NoSMHelp'          = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"; Type="DWord" }
+    # System-level tools
+    'DisableRegistryTools' = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\System"; Type="DWord" }
+    # Command-line and scripting restrictions
+    'DisableCMD'        = @{ Path = "Software\Policies\Microsoft\Windows\System"; Type="DWord" }
+    'EnableScripts'     = @{ Path = "Software\Policies\Microsoft\Windows\System"; Type="DWord" }
+    'ExecutionPolicy'   = @{ Path = "Software\Policies\Microsoft\Windows\System"; Type="String" }
+    # App Store lockdown
+    'RemoveWindowsStore'= @{ Path = "Software\Policies\Microsoft\WindowsStore"; Type="DWord" }
+    # Edge Block (not registry; informational)
+    'NoEdge'            = @{ Path = $null; Type="DWord" }
+}
+
+function Get-MostRestrictivePolicy {
+    # Everything set to true (most restricted)
+    return @{
+        NoClose = $true
+        NoControlPanel = $true
+        NoRun = $true
+        NoViewContextMenu = $true
+        NoFileMenu = $true
+        NoFolderOptions = $true
+        NoSetFolders = $true
+        NoSetTaskbar = $true
+        NoSMHelp = $true
+        DisableRegistryTools = $true
+        DisableCMD = $true
+        EnableScripts = $false
+        ExecutionPolicy = $true
+        RemoveWindowsStore = $true
+        NoEdge = $true
+    }
+}
+
+Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
     $sid = $_.BaseName
-    $decision = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-    Write-Log "[INFO] Processing SID=$sid; Decision=$decision"
+    $decisionObj = $null
+    try {
+        $decisionJson = Get-Content $_.FullName -Raw | ConvertFrom-Json
+        $decisionObj = $decisionJson
+    } catch {
+        Write-Log "[ERROR] [$sid] Failed to parse decision file; using legacy mode: $($_.Exception.Message)"
+        # Fallback: treat as legacy "LOCKDOWN"/"EXEMPT"
+        $decisionText = Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1
+        $decisionObj = @{ status = $decisionText; company = "Unknown"; role = "Unknown" }
+    }
 
-    foreach ($hivePath in $LockdownOptions.Keys) {
-        # Convert HKCU: to HKEY_USERS\SID (raw string for .NET)
-        $keyName = "HKEY_USERS\$sid" + $hivePath.Substring(5)  # Removes 'HKCU:' prefix
+    $status = $decisionObj.status
+    $unit   = $decisionObj.company
+    $role   = $decisionObj.role
 
-        foreach ($settingKvp in $LockdownOptions[$hivePath].GetEnumerator()) {
-            $name = $settingKvp.Key
-            $value = $settingKvp.Value
-            $apply = ($decision -eq 'LOCKDOWN')
+    Write-Log "[INFO] Processing SID=$sid; Status=$status; Unit=$unit; Role=$role"
 
-            try {
-                if ($apply) {
-                    if (-not (Test-Path ("Registry::" + $keyName))) {
-                        New-Item -Path ("Registry::" + $keyName) -Force | Out-Null
-                        Write-Log "[INFO] Created registry key: Registry::$keyName"
-                    }
+    if ($status -eq 'EXEMPT') {
+        Write-Log "[INFO] [$sid] Admin detected. No lockdown applied."
+        return
+    }
 
-                    $valueKind = if ($name -eq 'ExecutionPolicy') { 'String' } else { 'DWord' }
-                    $valueToSet = if ($value) { 1 } else { 0 }
-
-                    Set-ItemProperty -Path ("Registry::" + $keyName) -Name $name -Value $valueToSet -Type $valueKind -Force
-                    Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at Registry::$keyName"
-                }
-                else {
-                    Remove-ItemProperty -Path ("Registry::" + $keyName) -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed setting: $name (if it existed)"
-                }
+    # Get policy from matrix
+    $policy = $null
+    if (Test-Path $matrixPath) {
+        try {
+            $matrix = Get-Content $matrixPath | ConvertFrom-Json
+            if ($matrix.PSObject.Properties.Name -contains $unit -and $matrix.$unit.PSObject.Properties.Name -contains $role) {
+                $policy = $matrix.$unit.$role
+                Write-Log "[INFO] [$sid] Using matrix policy for $unit/$role: $($policy | ConvertTo-Json -Compress)"
+            } else {
+                Write-Log "[WARN] [$sid] No matrix policy for $unit/$role; using most restrictive."
+                $policy = Get-MostRestrictivePolicy
             }
-            catch {
+        } catch {
+            Write-Log "[ERROR] [$sid] Failed to parse matrix: $($_.Exception.Message)"
+            $policy = Get-MostRestrictivePolicy
+        }
+    } else {
+        Write-Log "[ERROR] [$sid] Matrix file not found at $matrixPath"
+        $policy = Get-MostRestrictivePolicy
+    }
+
+    # Apply or remove settings per matrix
+    foreach ($setting in $policy.GetEnumerator()) {
+        $name = $setting.Key
+        $value = $setting.Value
+
+        if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
+            $regRelPath = $RegMap[$name].Path
+            $regPath = "Registry::HKEY_USERS\$sid\$regRelPath"
+            $valueKind = $RegMap[$name].Type
+            try {
+                if ($value) {
+                    if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+                    $valueToSet = if ($valueKind -eq "String") { "Restricted" } else { 1 }
+                    Set-ItemProperty -Path $regPath -Name $name -Value $valueToSet -Type $valueKind -Force
+                    Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at $regPath"
+                } else {
+                    Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
+                    Write-Log "[INFO] [$sid] Removed setting: $name from $regPath"
+                }
+            } catch {
                 Write-Log "[ERROR] [$sid] Error setting/removing $name : $($_.Exception.Message)"
             }
         }
+        elseif ($name -eq "NoEdge") {
+            if ($value) {
+                Write-Log "[WARN] [$sid] Edge blocking is not done via registry. Use AppLocker/SRP."
+            }
+        }
+        else {
+            Write-Log "[WARN] [$sid] Unknown setting '$name' in matrix. No action taken."
+        }
     }
 
-    Write-Log "[INFO] Completed processing SID=$sid with decision=$decision"
+    Write-Log "[INFO] Completed processing SID=$sid with matrix decision."
 }
-
-
