@@ -5,11 +5,8 @@
 # Works uniformly on Windows 10 & 11.
 # ------------------------------
 
-$tenantId   = '31424738-b78c-4273-b299-844512ee2746'
-$clientId   = '231165ef-2a5c-4136-987f-4835086c089e'
-$secretPath = "C:\ProgramData\SSA\Secrets\GraphApiCred.dat"
-$matrixPath = "C:\ProgramData\SSA\Scripts\LockdownMatrix.json"
-$queuePath  = "C:\ProgramData\SSA\LockdownQueue"
+$matrixPath  = "C:\ProgramData\SSA\Scripts\LockdownMatrix.json"
+$queuePath   = "C:\ProgramData\SSA\LockdownQueue"
 $logFilePath = "C:\ProgramData\SSA\Logs\POSLockdownSystem.log"
 
 function Write-Log {
@@ -19,59 +16,31 @@ function Write-Log {
     "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
-function Get-ClientSecret {
-    if (Test-Path $secretPath) {
-        try {
-            Add-Type -AssemblyName System.Security
-            $b64 = Get-Content -Path $secretPath -Raw
-            $encrypted = [Convert]::FromBase64String($b64)
-            $decrypted = [System.Security.Cryptography.ProtectedData]::Unprotect(
-                $encrypted, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine
-            )
-            return [System.Text.Encoding]::UTF8.GetString($decrypted)
-        } catch {
-            Write-Log "[ERROR] Failed to decrypt client secret: $($_.Exception.Message)"
-            return $null
-        }
-    } else {
-        Write-Log "[ERROR] Client secret file not found at $secretPath"
-        return $null
-    }
+# Mapping of setting names to registry paths and value types
+$RegMap = @{
+    # Explorer Policies
+    'NoClose'             = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoControlPanel'      = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoRun'               = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoViewContextMenu'   = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoFileMenu'          = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoFolderOptions'     = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoSetFolders'        = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoSetTaskbar'        = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    'NoSMHelp'            = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";      Type="DWord" }
+    # System-level tools
+    'DisableRegistryTools' = @{ Path = "Software\Microsoft\Windows\CurrentVersion\Policies\System";        Type="DWord" }
+    # Command-line and scripting restrictions
+    'DisableCMD'          = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="DWord" }
+    'EnableScripts'       = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="DWord" }
+    'ExecutionPolicy'     = @{ Path = "Software\Policies\Microsoft\Windows\System";                       Type="String" }
+    # App Store lockdown
+    'RemoveWindowsStore'  = @{ Path = "Software\Policies\Microsoft\WindowsStore";                         Type="DWord" }
+    # Edge Block (not implemented - see below)
+    'NoEdge'              = @{ Path = $null; Type="DWord" }
 }
 
-function Get-GraphUserInfo($username) {
-    try {
-        $clientSecret = Get-ClientSecret
-        if (!$clientSecret) { return $null }
-
-        $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" -Method POST -Body @{
-            client_id     = $clientId
-            scope         = "https://graph.microsoft.com/.default"
-            client_secret = $clientSecret
-            grant_type    = "client_credentials"
-        }
-        $token = $tokenResponse.access_token
-        $upn = "$username@thessagroup.com"
-        $userInfo = Invoke-RestMethod -Headers @{Authorization = "Bearer $token"} `
-            -Uri "https://graph.microsoft.com/v1.0/users/$upn" `
-            -Method Get
-        return $userInfo
-    } catch {
-        Write-Log "[ERROR] Failed to get user info from Graph for $username: $($_.Exception.Message)"
-        return $null
-    }
-}
-
-function Get-MostRestrictivePolicy {
-    # Everything set to true (most restricted)
-    return @{
-        NoClose = $true
-        NoControlPanel = $true
-        NoEdge = $true
-    }
-}
-
-# Main Loop
+# MAIN LOGIC
 Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
     $sid = $_.BaseName
     $decision = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
@@ -82,73 +51,69 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
         return
     }
 
-    # Default: most restrictive policy in case of failure
-    $policy = Get-MostRestrictivePolicy
+    # Read matrix for this user
     $unit = "Unknown"
     $role = "Unknown"
-    $username = $null
+    $policy = @{}
 
-    # Try to get username for SID (from registry, fallback to sid)
-    try {
-        $userKey = "Registry::HKEY_USERS\$sid\Volatile Environment"
-        if (Test-Path $userKey) {
-            $username = (Get-ItemProperty -Path $userKey -Name USERNAME -ErrorAction Stop).USERNAME
-        } else {
-            Write-Log "[WARN] Could not find username for SID=$sid; using SID as fallback"
-            $username = $sid
-        }
-    } catch {
-        Write-Log "[WARN] Could not resolve username for SID=$sid: $($_.Exception.Message)"
-        $username = $sid
-    }
+    # (Optional: Read username/company/role from a cache or from registry/SID logic if needed)
 
-    # Get company and jobtitle if possible
-    $userInfo = Get-GraphUserInfo $username
-    if ($userInfo -and $userInfo.companyName -and $userInfo.jobTitle) {
-        $unit = $userInfo.companyName
-        $role = $userInfo.jobTitle
-        Write-Log "[INFO] [$sid] User attributes: companyName=$unit, jobTitle=$role"
-    } else {
-        Write-Log "[WARN] [$sid] Could not get companyName or jobTitle, using most restrictive policy."
-    }
-
-    # Try to load the lockdown matrix and get correct policy
     if (Test-Path $matrixPath) {
         try {
             $matrix = Get-Content $matrixPath | ConvertFrom-Json
+            # If you store unit/role somewhere, fetch it here. Otherwise, use default
+            # For this example, set defaults. Update to dynamically set as needed.
+            $unit = "CFZ"
+            $role = "POS"
             if ($matrix.PSObject.Properties.Name -contains $unit -and $matrix.$unit.PSObject.Properties.Name -contains $role) {
                 $policy = $matrix.$unit.$role
-                Write-Log "[INFO] [$sid] Found lockdown policy in matrix for $unit/$role"
+                Write-Log "[INFO] [$sid] Using lockdown matrix policy for $unit/$role"
             } else {
-                Write-Log "[WARN] [$sid] No policy in matrix for $unit/$role; using most restrictive"
+                Write-Log "[WARN] [$sid] No lockdown policy found for $unit/$role, skipping."
+                return
             }
         } catch {
             Write-Log "[ERROR] [$sid] Failed to parse lockdown matrix: $($_.Exception.Message)"
+            return
         }
     } else {
         Write-Log "[ERROR] [$sid] Lockdown matrix not found at $matrixPath"
-    }
-
-    # Apply the lockdown policy
-    $regPath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
-    if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
+        return
     }
 
     foreach ($setting in $policy.GetEnumerator()) {
         $name = $setting.Key
         $value = $setting.Value
-        try {
-            if ($value) {
-                Set-ItemProperty -Path $regPath -Name $name -Value 1 -Type DWord -Force
-                Write-Log "[INFO] [$sid] Applied: $name=1"
-            } else {
-                Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
-                Write-Log "[INFO] [$sid] Removed: $name"
+
+        if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
+            $regRelPath = $RegMap[$name].Path
+            $regPath = "Registry::HKEY_USERS\$sid\$regRelPath"
+            $valueKind = $RegMap[$name].Type
+            try {
+                if ($value) {
+                    if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+                    $valueToSet = if ($valueKind -eq "String") { "Restricted" } else { 1 }
+                    Set-ItemProperty -Path $regPath -Name $name -Value $valueToSet -Type $valueKind -Force
+                    Write-Log "[INFO] [$sid] Set $name = $valueToSet ($valueKind) at $regPath"
+                } else {
+                    Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
+                    Write-Log "[INFO] [$sid] Removed setting: $name from $regPath"
+                }
+            } catch {
+                Write-Log "[ERROR] [$sid] Error setting/removing $name : $($_.Exception.Message)"
             }
-        } catch {
-            Write-Log "[ERROR] [$sid] Failed to set $name: $($_.Exception.Message)"
+        }
+        elseif ($name -eq "NoEdge") {
+            # Not a real registry lockdown; log that this is not implemented
+            if ($value) {
+                Write-Log "[WARN] [$sid] Edge browser blocking is not implemented via registry. Use AppLocker or SRP for real blocking."
+                # Optionally, insert AppLocker/deny Edge logic here
+            }
+        }
+        else {
+            Write-Log "[WARN] [$sid] Unknown setting '$name' found in matrix. No action taken."
         }
     }
-    Write-Log "[INFO] [$sid] Lockdown applied for $unit/$role."
+
+    Write-Log "[INFO] Completed processing SID=$sid with matrix decision."
 }
