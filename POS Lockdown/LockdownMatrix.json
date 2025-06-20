@@ -1,10 +1,74 @@
 {
   "CFZ": {
-    "POS":     { "NoClose": true,  "NoControlPanel": true,  "NoEdge": true  },
-    "Kiosk":   { "NoClose": false, "NoControlPanel": true,  "NoEdge": true  }
+    "POS": {
+      "NoClose": true,
+      "NoControlPanel": true,
+      "NoRun": true,
+      "NoViewContextMenu": true,
+      "NoFileMenu": true,
+      "NoFolderOptions": true,
+      "NoSetFolders": true,
+      "NoSetTaskbar": true,
+      "NoSMHelp": true,
+      "DisableRegistryTools": true,
+      "DisableCMD": true,
+      "EnableScripts": false,
+      "ExecutionPolicy": true,
+      "RemoveWindowsStore": true,
+      "NoEdge": true
+    },
+    "Kiosk": {
+      "NoClose": false,
+      "NoControlPanel": true,
+      "NoRun": true,
+      "NoViewContextMenu": true,
+      "NoFileMenu": true,
+      "NoFolderOptions": true,
+      "NoSetFolders": true,
+      "NoSetTaskbar": true,
+      "NoSMHelp": true,
+      "DisableRegistryTools": true,
+      "DisableCMD": true,
+      "EnableScripts": false,
+      "ExecutionPolicy": true,
+      "RemoveWindowsStore": true,
+      "NoEdge": true
+    }
   },
   "CTZ": {
-    "POS":     { "NoClose": true,  "NoControlPanel": true, "NoEdge": false },
-    "Kiosk":   { "NoClose": true,  "NoControlPanel": true,  "NoEdge": true  }
+    "POS": {
+      "NoClose": true,
+      "NoControlPanel": false,
+      "NoRun": true,
+      "NoViewContextMenu": true,
+      "NoFileMenu": true,
+      "NoFolderOptions": true,
+      "NoSetFolders": true,
+      "NoSetTaskbar": true,
+      "NoSMHelp": true,
+      "DisableRegistryTools": true,
+      "DisableCMD": true,
+      "EnableScripts": false,
+      "ExecutionPolicy": true,
+      "RemoveWindowsStore": true,
+      "NoEdge": false
+    },
+    "Kiosk": {
+      "NoClose": true,
+      "NoControlPanel": true,
+      "NoRun": true,
+      "NoViewContextMenu": true,
+      "NoFileMenu": true,
+      "NoFolderOptions": true,
+      "NoSetFolders": true,
+      "NoSetTaskbar": true,
+      "NoSMHelp": true,
+      "DisableRegistryTools": true,
+      "DisableCMD": true,
+      "EnableScripts": false,
+      "ExecutionPolicy": true,
+      "RemoveWindowsStore": true,
+      "NoEdge": true
+    }
   }
 }
