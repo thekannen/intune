@@ -1,4 +1,3 @@
-
 # ------------------------------
 # POSUserPolicyDetector.ps1
 # ------------------------------
@@ -21,15 +20,12 @@ $cacheDir  = "C:\ProgramData\SSA\LockdownQueue"
 $logFilePath   = "C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log"
 $cachePath = Join-Path $cacheDir "$userSid.txt"
 
-# --- Logging function ---
 function Write-Log {
     param([string]$Message)
-
     $logFolder = Split-Path $logFilePath
     if (-not (Test-Path $logFolder)) {
         New-Item -Path $logFolder -ItemType Directory -Force | Out-Null
     }
-
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     "$timestamp - $Message" | Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
@@ -52,47 +48,35 @@ function Get-ClientSecret {
     }
 }
 
-function Write-DecisionToCache($status) {
+function Write-DecisionToCache($decisionObj) {
     try {
-        $status | Out-File -FilePath $cachePath -Encoding ASCII -Force
-        Write-Log "[INFO] [$status] Decision cached at $cachePath"
+        $decisionObj | ConvertTo-Json | Set-Content -Path $cachePath -Encoding UTF8 -Force
+        Write-Log "[INFO] Decision cached at $cachePath: $($decisionObj | ConvertTo-Json -Compress)"
     } catch {
         Write-Log "[ERROR] Failed to write decision to cache: $($_.Exception.Message)"
     }
 }
 
-function DetectLocalGroup() {
-    try {
-        $groupOutput = whoami /groups
-        if ($groupOutput -match "Administrators") {
-            Write-Log "[INFO] Local group match found: Administrators"
-            return "EXEMPT"
-        }
-        if ($groupOutput -match "Users") {
-            Write-Log "[INFO] Local group match found: Users"
-            return "LOCKDOWN"
-        }        
-    } catch {
-        Write-Log "[WARN] Failed to check local group membership: $($_.Exception.Message)"
-    }
-    return "NONE"
-}
-
 # --- Main Logic ---
 Write-Log "[INFO] Policy detection started for $username (SID: $userSid, Domain: $domain)"
 
-# LOCAL ACCOUNT HANDLING
-if ($domain -eq $env:COMPUTERNAME) {
-    Write-Log "[INFO] Detected local account. Falling back to local group detection."
-    $status = DetectLocalGroup
-    Write-DecisionToCache $status
-    return
+# Check for admin group (EXEMPT)
+try {
+    $groupOutput = whoami /groups
+    if ($groupOutput -match "Administrators") {
+        $decisionObj = @{ Status = "EXEMPT" }
+        Write-DecisionToCache $decisionObj
+        Write-Log "[INFO] Admin group detected for $username. User is exempt."
+        return
+    }
+} catch {
+    Write-Log "[WARN] Could not check admin group: $($_.Exception.Message)"
 }
 
+# For all other users, pull Entra ID attributes (companyName/jobTitle)
 try {
     $clientSecret = Get-ClientSecret
     Write-Log "[INFO] Client secret decrypted successfully."
-
     $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" -Method POST -Body @{
         client_id     = $clientId
         scope         = "https://graph.microsoft.com/.default"
@@ -102,6 +86,7 @@ try {
     $token = $tokenResponse.access_token
     Write-Log "[INFO] Graph token acquired."
 
+    # Check group membership
     $body = @{ groupIds = @($posGroupId, $adminExemptId) } | ConvertTo-Json
     $headers = @{
         Authorization = "Bearer $token"
@@ -110,21 +95,37 @@ try {
     $response = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$upn/checkMemberGroups" -Method POST -Headers $headers -Body $body
     Write-Log "[INFO] Group membership result: $($response.value -join ', ')"
 
-    $status = "NONE"
-    if ($response.value -contains $adminExemptId) { $status = "EXEMPT" }
-    elseif ($response.value -contains $posGroupId) { $status = "LOCKDOWN" }
+    if ($response.value -contains $adminExemptId) {
+        $decisionObj = @{ Status = "EXEMPT" }
+        Write-DecisionToCache $decisionObj
+        return
+    }
+    elseif ($response.value -contains $posGroupId) {
+        # Get company/jobtitle for lockdown matrix
+        $userInfo = Invoke-RestMethod -Headers @{Authorization = "Bearer $token"} `
+            -Uri "https://graph.microsoft.com/v1.0/users/$upn" `
+            -Method Get
 
-    Write-DecisionToCache $status
+        $unit = $userInfo.companyName
+        $role = $userInfo.jobTitle
+        if ([string]::IsNullOrWhiteSpace($unit) -or [string]::IsNullOrWhiteSpace($role)) {
+            Write-Log "[WARN] User $upn missing companyName or jobTitle in Entra. Defaulting to most restrictive."
+            $decisionObj = @{ Status = "LOCKDOWN"; Unit = "Unknown"; Role = "Unknown" }
+        } else {
+            $decisionObj = @{ Status = "LOCKDOWN"; Unit = $unit; Role = $role }
+            Write-Log "[INFO] $username mapped to Unit='$unit', Role='$role'."
+        }
+        Write-DecisionToCache $decisionObj
+        return
+    } else {
+        Write-Log "[INFO] User $username not in POS or Admin group. Defaulting to no lockdown."
+        $decisionObj = @{ Status = "NONE" }
+        Write-DecisionToCache $decisionObj
+        return
+    }
 }
 catch {
     Write-Log "[WARN] Graph query failed: $($_.Exception.Message)"
-
-    if (Test-Path $cachePath) {
-        $cached = Get-Content $cachePath -ErrorAction SilentlyContinue | Select-Object -First 1
-        Write-Log "[INFO] Graph offline. Falling back to cached decision: $cached"
-    } else {
-        Write-Log "[INFO] No cache available. Defaulting to NONE"
-        $cached = "NONE"
-    }
-    Write-DecisionToCache $cached
+    $decisionObj = @{ Status = "LOCKDOWN"; Unit = "Unknown"; Role = "Unknown" }
+    Write-DecisionToCache $decisionObj
 }
