@@ -19,8 +19,8 @@
     },
     "Kiosk": {
       "NoClose": false,
-      "NoControlPanel": true,
-      "NoRun": true,
+      "NoControlPanel": false,
+      "NoRun": false,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
       "NoFolderOptions": true,
