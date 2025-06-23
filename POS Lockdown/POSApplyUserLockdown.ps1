@@ -30,28 +30,28 @@ function Write-Log {
 
 # Registry mapping
 $RegMap = @{
-    'NoClose'             = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoControlPanel'      = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoRun'               = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoViewContextMenu'   = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoFileMenu'          = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoFolderOptions'     = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoSetFolders'        = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoSetTaskbar'        = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'NoSMHelp'            = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
-    'DisableRegistryTools'= @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';        Type = 'DWord' }
-    'DisableCMD'          = @{ Path = 'Software\Policies\Microsoft\Windows\System';                       Type = 'DWord' }
-    'EnableScripts'       = @{ Path = 'Software\Policies\Microsoft\Windows\System';                       Type = 'DWord' }
-    'ExecutionPolicy'     = @{ Path = 'Software\Policies\Microsoft\Windows\System';                       Type = 'String' }
-    'RemoveWindowsStore'  = @{ Path = 'Software\Policies\Microsoft\WindowsStore';                         Type = 'DWord' }
+    'NoClose'             = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoControlPanel'      = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoRun'               = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoViewContextMenu'   = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoFileMenu'          = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoFolderOptions'     = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoSetFolders'        = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoSetTaskbar'        = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'NoSMHelp'            = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
+    'DisableRegistryTools'= @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';        Type = 'DWord' }
+    'DisableCMD'          = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                       Type = 'DWord' }
+    'EnableScripts'       = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                       Type = 'DWord' }
+    'ExecutionPolicy'     = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                       Type = 'String' }
+    'RemoveWindowsStore'  = @{ Path = 'Software\\Policies\\Microsoft\\WindowsStore';                         Type = 'DWord' }
     'NoEdge'              = @{ Path = $null;                                                          Type = 'DWord' }
 }
 
 # 1) Sanity-check queue folder and list files
-Write-Log "[INFO] Scanning queue directory: $queuePath"
+Write-Log ("[INFO] Scanning queue directory: {0}" -f $queuePath)
 $files = Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue
 $fileNames = $files | Select-Object -ExpandProperty Name
-Write-Log "[INFO] Found $($files.Count) queue file(s): $($fileNames -join ', ')"
+Write-Log ("[INFO] Found {0} queue file(s): {1}" -f $files.Count, ($fileNames -join ', '))
 
 # Main loop
 foreach ($file in $files) {
@@ -63,14 +63,14 @@ foreach ($file in $files) {
     # Read and parse queue
     try {
         $lines = Get-Content $file.FullName -ErrorAction Stop
-        Write-Log "[DEBUG] Raw queue lines for SID=$sid -> $($lines -join ' | ')"
+        Write-Log ("[DEBUG] Raw queue lines for SID={0} -> {1}" -f $sid, ($lines -join ' | '))
         foreach ($line in $lines) {
             if ($line -match '^company:\s*(.+)$') { $company = $matches[1] }
             if ($line -match '^role:\s*(.+)$')    { $role    = $matches[1] }
         }
-        Write-Log "[INFO] Parsed queue for SID=$sid: company=$company, role=$role"
+        Write-Log ("[INFO] Parsed queue for SID={0}: company={1}, role={2}" -f $sid, $company, $role)
     } catch {
-        Write-Log "[ERROR] Failed reading queue file $($file.FullName): $($_.Exception.Message)"
+        Write-Log ("[ERROR] Failed reading queue file {0}: {1}" -f $file.FullName, $_.Exception.Message)
         continue
     }
 
@@ -81,15 +81,15 @@ foreach ($file in $files) {
             $matrix = Get-Content $matrixPath -Raw | ConvertFrom-Json
             if ($matrix.PSObject.Properties.Name -contains $company -and $matrix.$company.PSObject.Properties.Name -contains $role) {
                 $policy = $matrix.$company.$role
-                Write-Log "[INFO] Using matrix policy for $company/$role"
+                Write-Log ("[INFO] Using matrix policy for {0}/{1}" -f $company, $role)
             } else {
-                Write-Log "[WARN] No policy found for $company/$role; skipping"
+                Write-Log ("[WARN] No policy found for {0}/{1}; skipping" -f $company, $role)
             }
         } catch {
-            Write-Log "[ERROR] Failed parsing matrix: $($_.Exception.Message)"
+            Write-Log ("[ERROR] Failed parsing matrix: {0}" -f $_.Exception.Message)
         }
     } else {
-        Write-Log "[ERROR] Matrix file not found: $matrixPath"
+        Write-Log ("[ERROR] Matrix file not found: {0}" -f $matrixPath)
     }
     if (-not $policy) { continue }
 
@@ -108,19 +108,20 @@ foreach ($file in $files) {
                     if (-not (Test-Path $hkuPath)) { New-Item -Path $hkuPath -Force | Out-Null }
                     $valToSet = if ($type -eq 'String') { 'Restricted' } else { 1 }
                     Set-ItemProperty -Path $hkuPath -Name $name -Value $valToSet -Type $type -Force
-                    Write-Log "[INFO] [$sid] Set $name=$valToSet ($type) at $hkuPath"
+                    Write-Log ("[INFO] [{0}] Set {1}={2} ({3}) at {4}" -f $sid, $name, $valToSet, $type, $hkuPath)
                 } else {
                     Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed $name from $hkuPath"
+                    Write-Log ("[INFO] [{0}] Removed {1} from {2}" -f $sid, $name, $hkuPath)
                 }
             } catch {
-                Write-Log ("[ERROR] [$sid] Error setting/removing $name: $($_.Exception.Message)")
+                Write-Log ("[ERROR] [{0}] Error setting/removing {1}: {2}" -f $sid, $name, $_.Exception.Message)
             }
         } elseif ($name -eq 'NoEdge' -and $value) {
-            Write-Log "[WARN] [$sid] Edge blocking not implemented. Use AppLocker/SRP."
+            Write-Log ("[WARN] [{0}] Edge blocking not implemented. Use AppLocker/SRP." -f $sid)
         }
     }
 
-    Write-Log "[INFO] Completed processing for SID=$sid ($company/$role)"
+    Write-Log ("[INFO] Completed processing for SID={0} ({1}/{2})" -f $sid, $company, $role)
 }
-#DRAGON3
+
+#Dragon5
