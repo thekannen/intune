@@ -19,6 +19,7 @@ $logFilePath = 'C:\ProgramData\SSA\Logs\POSLockdownSystem.log'
 Start-Sleep -Seconds 5
 
 # Logging function
+default param
 function Write-Log {
     param([string]$Message)
     $folder = Split-Path $logFilePath
@@ -46,30 +47,31 @@ $RegMap = @{
     'NoEdge'              = @{ Path = $null;                                                          Type = 'DWord' }
 }
 
-# Sanity-check queue files
-Write-Log "[INFO] Looking in $queuePath for .txt files"
+# 1) Sanity-check queue folder and list files
+Write-Log "[INFO] Scanning queue directory: $queuePath"
 $files = Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue
-Write-Log "[INFO] Found $($files.Count) queue file(s): $($files | ForEach-Object { $_.Name } -join ', ')"
+$fileNames = $files | Select-Object -ExpandProperty Name
+Write-Log "[INFO] Found $($files.Count) queue file(s): $($fileNames -join ', ')"
 
 # Main loop
-Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | ForEach-Object {
-    $sid     = $_.BaseName
-    $company = $null;  $role = $null
+foreach ($file in $files) {
+    $sid     = $file.BaseName
+    $company = $null; $role = $null
 
     Start-Sleep -Seconds 2
 
-    # Read and parse queue file
+    # Read and parse queue
     try {
-        $lines = Get-Content $_.FullName -ErrorAction Stop
-        Write-Log "[DEBUG] Raw queue lines for SID=${sid} -> $($lines -join ' | ')"
+        $lines = Get-Content $file.FullName -ErrorAction Stop
+        Write-Log "[DEBUG] Raw queue lines for SID=$sid -> $($lines -join ' | ')"
         foreach ($line in $lines) {
             if ($line -match '^company:\s*(.+)$') { $company = $matches[1] }
             if ($line -match '^role:\s*(.+)$')    { $role    = $matches[1] }
         }
-        Write-Log "[INFO] Parsed queue for SID=${sid}: company=${company}, role=${role}"
+        Write-Log "[INFO] Parsed queue for SID=$sid: company=$company, role=$role"
     } catch {
-        Write-Log "[ERROR] Failed to read queue file $($_.FullName): $($_.Exception.Message)"
-        return
+        Write-Log "[ERROR] Failed reading queue file $($file.FullName): $($_.Exception.Message)"
+        continue
     }
 
     # Load matrix and select policy
@@ -77,49 +79,48 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
     if (Test-Path $matrixPath) {
         try {
             $matrix = Get-Content $matrixPath -Raw | ConvertFrom-Json
-            if ($company -and $role -and $matrix.PSObject.Properties.Name.Contains($company) -and $matrix.$company.PSObject.Properties.Name.Contains($role)) {
+            if ($matrix.PSObject.Properties.Name -contains $company -and $matrix.$company.PSObject.Properties.Name -contains $role) {
                 $policy = $matrix.$company.$role
-                Write-Log "[INFO] Using matrix lockdown policy for ${company}/${role}"
+                Write-Log "[INFO] Using matrix policy for $company/$role"
             } else {
-                Write-Log "[WARN] No policy found for ${company}/${role}; skipping"
+                Write-Log "[WARN] No policy found for $company/$role; skipping"
             }
         } catch {
-            Write-Log "[ERROR] Failed to parse lockdown matrix: $($_.Exception.Message)"
+            Write-Log "[ERROR] Failed parsing matrix: $($_.Exception.Message)"
         }
     } else {
-        Write-Log "[ERROR] Lockdown matrix not found at $matrixPath"
+        Write-Log "[ERROR] Matrix file not found: $matrixPath"
     }
-    if (-not $policy) { Write-Log "[INFO] No policy loaded for SID=${sid}; skipping"; return }
+    if (-not $policy) { continue }
 
-    # Apply each policy setting
+    # Apply each setting
     foreach ($kv in $policy.PSObject.Properties) {
         $name  = $kv.Name
         $value = $kv.Value
 
         if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
             $relPath = $RegMap[$name].Path
-            $regPath = "Registry::HKEY_USERS\$sid\$relPath"
+            $hkuPath = "HKU:\$sid\$relPath"
             $type    = $RegMap[$name].Type
             try {
                 if ($value) {
-                    if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+                    # Ensure registry key exists
+                    if (-not (Test-Path $hkuPath)) { New-Item -Path $hkuPath -Force | Out-Null }
                     $valToSet = if ($type -eq 'String') { 'Restricted' } else { 1 }
-                    Set-ItemProperty -Path $regPath -Name $name -Value $valToSet -Type $type -Force
-                    Write-Log "[INFO] [$sid] Set $name=$valToSet ($type) @ $regPath"
+                    Set-ItemProperty -Path $hkuPath -Name $name -Value $valToSet -Type $type -Force
+                    Write-Log "[INFO] [$sid] Set $name=$valToSet ($type) at $hkuPath"
                 } else {
-                    Remove-ItemProperty -Path $regPath -Name $name -ErrorAction SilentlyContinue
-                    Write-Log "[INFO] [$sid] Removed $name from $regPath"
+                    Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
+                    Write-Log "[INFO] [$sid] Removed $name from $hkuPath"
                 }
             } catch {
-                Write-Log ("[ERROR] [{0}] Error setting/removing {1}: {2}" -f $sid, $name, $_.Exception.Message)
+                Write-Log ("[ERROR] [$sid] Error setting/removing $name: $($_.Exception.Message)")
             }
-        } elseif ($name -eq 'NoEdge') {
-            if ($value) { Write-Log "[WARN] [$sid] Edge blocking not implemented. Use AppLocker/SRP." }
-        } else {
-            Write-Log "[WARN] [$sid] Unknown setting '$name' in policy."
+        } elseif ($name -eq 'NoEdge' -and $value) {
+            Write-Log "[WARN] [$sid] Edge blocking not implemented. Use AppLocker/SRP."
         }
     }
 
-    Write-Log "[INFO] Completed processing SID=${sid} for company=${company} role=${role}"
+    Write-Log "[INFO] Completed processing for SID=$sid ($company/$role)"
 }
-#DRAGON
+#DRAGON3
