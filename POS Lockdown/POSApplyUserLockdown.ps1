@@ -111,7 +111,7 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
                     Write-Log "[INFO] [$sid] Removed $name from $regPath"
                 }
             } catch {
-                Write-Log "[ERROR] [$sid] Error setting/removing $name: $($_.Exception.Message)"
+                Write-Log ("[ERROR] [{0}] Error setting/removing {1}: {2}" -f $sid, $name, $_.Exception.Message)
             }
         } elseif ($name -eq 'NoEdge') {
             if ($value) { Write-Log "[WARN] [$sid] Edge blocking not implemented. Use AppLocker/SRP." }
