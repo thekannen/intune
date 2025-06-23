@@ -12,19 +12,20 @@
 # Configuration
 $tenantId    = '31424738-b78c-4273-b299-844512ee2746'
 $clientId    = '231165ef-2a5c-4136-987f-4835086c089e'
-$secretPath  = "C:\ProgramData\SSA\Secrets\GraphApiCred.dat"
-$cacheDir    = "C:\ProgramData\SSA\LockdownQueue"
-$logFilePath = "C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log"
+$secretPath  = 'C:\ProgramData\SSA\Secrets\GraphApiCred.dat'
+$cacheDir    = 'C:\ProgramData\SSA\LockdownQueue'
+$logFilePath = 'C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log'
 
 # Delay to allow upstream processes to complete
 Start-Sleep -Seconds 5
 
 # Logging function
-default param
 function Write-Log {
     param([string]$Message)
     $folder = Split-Path $logFilePath
-    if (-not (Test-Path $folder)) { New-Item -Path $folder -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path $folder)) {
+        New-Item -Path $folder -ItemType Directory -Force | Out-Null
+    }
     "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" |
         Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
@@ -63,9 +64,9 @@ function Get-ClientSecret {
 
 # Main
 try {
-    $userSid  = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-    $username = $env:USERNAME
-    $upn      = "$username@thessagroup.com"
+    $userSid   = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    $username  = $env:USERNAME
+    $upn       = "$username@thessagroup.com"
     $queueFile = Join-Path $cacheDir "$userSid.txt"
 
     Write-Log "[INFO] Starting policy detection for $username (SID: $userSid)"
@@ -75,21 +76,48 @@ try {
     if (-not $clientSecret) { throw "No client secret available" }
 
     # Acquire Graph token
-    $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" -Method POST -Body @{
-        client_id     = $clientId
-        scope         = "https://graph.microsoft.com/.default"
-        client_secret = $clientSecret
-        grant_type    = "client_credentials"
-    }
+    $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" `
+        -Method POST -Body @{
+            client_id     = $clientId
+            scope         = 'https://graph.microsoft.com/.default'
+            client_secret = $clientSecret
+            grant_type    = 'client_credentials'
+        }
     $token = $tokenResponse.access_token
     Write-Log "[INFO] Acquired Graph access token"
 
-    # Query user object
-    $headers  = @{ Authorization = "Bearer $token" }
-    $userInfo = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/users/$upn?`$select=companyName,jobTitle" -Headers $headers -Method GET
+    # ——————————————————————————————
+    # Enhanced user-info call with full logging
+    # ——————————————————————————————
+    $select  = '%24select=companyName,jobTitle'
+    $userUrl = "https://graph.microsoft.com/v1.0/users/$upn`?$select"
+    Write-Log "[INFO] Fetching user object for UPN: $upn"
+    Write-Log "[INFO] Request URI: $userUrl"
 
-    $company = $userInfo.companyName
-    $role    = $userInfo.jobTitle
+    try {
+        $userInfo = Invoke-RestMethod `
+            -Uri    $userUrl `
+            -Headers @{ Authorization = "Bearer $token" } `
+            -Method GET -ErrorAction Stop
+
+        Write-Log "[INFO] Successfully retrieved user object."
+        $company = $userInfo.companyName
+        $role    = $userInfo.jobTitle
+    }
+    catch {
+        $ex   = $_.Exception
+        $resp = $ex.Response
+        $code = if ($resp) { $resp.StatusCode.Value__ } else { 'N/A' }
+        $body = if ($resp) {
+                    (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd()
+                } else { '' }
+
+        Write-Log "[ERROR] Failed to GET user object. HTTP $code"
+        Write-Log "[ERROR] Response body: $body"
+        Write-Log "[ERROR] Exception message: $($ex.Message)"
+        throw
+    }
+
     if (-not $company) { $company = 'Unknown' }
     if (-not $role)    { $role    = 'Unknown' }
 
