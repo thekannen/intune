@@ -143,3 +143,5 @@ try {
 catch {
     Write-Log "[ERROR] Detection failed: $($_.Exception.Message)"
 }
+
+#Dagan
