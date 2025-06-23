@@ -122,3 +122,4 @@ Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyContinue | F
 
     Write-Log "[INFO] Completed processing SID=${sid} for company=${company} role=${role}"
 }
+#DRAGON
