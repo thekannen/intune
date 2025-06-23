@@ -20,6 +20,7 @@ $logFilePath = 'C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log'
 Start-Sleep -Seconds 5
 
 # Logging function
+default param
 function Write-Log {
     param([string]$Message)
     $folder = Split-Path $logFilePath
@@ -77,7 +78,7 @@ try {
 
     # Acquire Graph token
     $tokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/token" `
-        -Method POST -Body @{
+        -Method POST -Body @{ 
             client_id     = $clientId
             scope         = 'https://graph.microsoft.com/.default'
             client_secret = $clientSecret
@@ -126,7 +127,10 @@ try {
         "company: $company",
         "role:    $role"
     )
-    Write-Log "[INFO] About to write queue file for SID=$userSid:`n    $($content -join "`n    ")"
+    Write-Log "[INFO] About to write queue file for SID=${userSid}"
+    foreach ($line in $content) {
+        Write-Log "    $line"
+    }
     $content | Out-File -FilePath $queueFile -Encoding ASCII -Force
 
     if (Test-Path $queueFile) {
