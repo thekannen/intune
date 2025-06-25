@@ -29,36 +29,37 @@ function Write-Log {
     if (-not (Test-Path $folder)) {
         New-Item -Path $folder -ItemType Directory -Force | Out-Null
     }
-    "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) - $Message" |
+    "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Message" |
         Out-File -FilePath $logFilePath -Append -Encoding utf8
 }
 
+#–– TRACE INVOCATION ––
+Write-Log "[TRACE] POSApplyUserLockdown.ps1 invoked at $(Get-Date -Format o)"
+
 # Registry mapping (value names and registry paths)
 $RegMap = @{
-    'NoClose'                           = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables "Shut Down" option from Start menu
-    'NoControlPanel'                    = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides or disables access to Control Panel
-    'NoRun'                             = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables the "Run" command from the Start menu
-    'NoViewContextMenu'                 = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables right-click context menus in File Explorer
-    'NoFileMenu'                        = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Removes File menu from Windows Explorer
-    'NoFolderOptions'                   = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides "Folder Options" from Tools menu
-    'NoSetFolders'                      = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Prevents changes to folders' appearance (e.g., icon settings)
-    'NoSetTaskbar'                      = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables taskbar customization (e.g., lock/unlock, properties)
-    'NoSMHelp'                          = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Removes Help option from Start menu
-    'DisableRegistryTools'              = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';   Type = 'DWord' }           # Disables access to Registry Editor (regedit)
-    'DisableCMD'                        = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                   Type = 'DWord' }           # Disables use of Command Prompt (cmd.exe)
-    'EnableScripts'                     = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                   Type = 'DWord' }           # Enables or disables script execution (legacy GPO use)
-    'ExecutionPolicy'                   = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                   Type = 'String' }          # Sets PowerShell script execution policy (e.g., Restricted)
-    'RemoveWindowsStore'                = @{ Path = 'Software\\Policies\\Microsoft\\WindowsStore';                      Type = 'DWord' }           # Removes access to Microsoft Store app
-    'NoEdge'                            = @{ Path = $null;                                                              Type = 'DWord' }           # Placeholder: Requires AppLocker/SRP to restrict Edge
-    'NoDesktop'                         = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides desktop icons
-    'NoTaskMgr'                         = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'; Type = 'DWord' }             # Disables Task Manager
-    'DisableChangePassword'             = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'; Type = 'DWord' }             # Disables password change via Ctrl+Alt+Del
-    'NoStartMenuMorePrograms'           = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides "All Apps" list
-    'DisableNotificationCenter'         = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\Explorer'; Type = 'DWord' }                           # Disables Action Center
-    'DisableSystemToastNotifications'   = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\PushNotifications'; Type = 'DWord' }  # Disables toast notifications
-
+    'NoClose'                           = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoControlPanel'                    = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoRun'                             = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoViewContextMenu'                 = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoFileMenu'                        = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoFolderOptions'                   = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoSetFolders'                      = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoSetTaskbar'                      = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoSMHelp'                          = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'DisableRegistryTools'              = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';        Type = 'DWord' }
+    'DisableCMD'                        = @{ Path = 'Software\Policies\Microsoft\Windows\System';                       Type = 'DWord' }
+    'EnableScripts'                     = @{ Path = 'Software\Policies\Microsoft\Windows\System';                       Type = 'DWord' }
+    'ExecutionPolicy'                   = @{ Path = 'Software\Policies\Microsoft\Windows\System';                       Type = 'String' }
+    'RemoveWindowsStore'                = @{ Path = 'Software\Policies\Microsoft\WindowsStore';                         Type = 'DWord' }
+    'NoEdge'                            = @{ Path = $null;                                                              Type = 'DWord' }
+    'NoDesktop'                         = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'NoTaskMgr'                         = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';         Type = 'DWord' }
+    'DisableChangePassword'             = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';         Type = 'DWord' }
+    'NoStartMenuMorePrograms'           = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';      Type = 'DWord' }
+    'DisableNotificationCenter'         = @{ Path = 'Software\Policies\Microsoft\Windows\Explorer';                     Type = 'DWord' }
+    'DisableSystemToastNotifications'   = @{ Path = 'Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'; Type = 'DWord' }
 }
-
 
 # 1) Sanity-check queue folder
 Write-Log ("[INFO] Scanning queue directory: {0}" -f $queuePath)
@@ -73,11 +74,9 @@ foreach ($file in $files) {
 
     # Detect if the SID is mounted
     if (-not (Test-Path "Registry::HKEY_USERS\$sid")) {
-    Write-Log ("[WARN] SID {0} not loaded into HKU. Skipping." -f $sid)
-    continue
+        Write-Log ("[WARN] SID {0} not loaded into HKU. Skipping." -f $sid)
+        continue
     }
-
-    # Start-Sleep -Seconds 2  # pacing
 
     # Read company/role
     try {
@@ -131,38 +130,35 @@ foreach ($file in $files) {
     if (-not $policy) { continue }
 
     # Apply each registry setting
-        foreach ($prop in $policy.PSObject.Properties) {
-            $name  = $prop.Name
-            $value = $prop.Value
+    foreach ($prop in $policy.PSObject.Properties) {
+        $name  = $prop.Name
+        $value = $prop.Value
 
-            if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
-                $relPath = $RegMap[$name].Path
-                $hkuPath = "Registry::HKEY_USERS\$sid\$relPath"
-                $type    = $RegMap[$name].Type
+        if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
+            $relPath = $RegMap[$name].Path
+            $hkuPath = "Registry::HKEY_USERS\$sid\$relPath"
+            $type    = $RegMap[$name].Type
 
-                try {
-                    # Ensure key exists
-                    if (-not (Test-Path $hkuPath)) { New-Item -Path $hkuPath -Force | Out-Null }
-                    
-                    if ($value) {
-                        # Create or update property with correct type
-                        $dw = if ($type -eq 'String') { [string]$value } else { 1 }
-                        New-ItemProperty -Path $hkuPath -Name $name -Value $dw -PropertyType $type -Force | Out-Null
-                        Write-Log ("[INFO] [{0}] Set {1} ({2}) at {3}" -f $sid, $name, $type, $hkuPath)
-                    } else {
-                        Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
-                        Write-Log ("[INFO] [{0}] Removed {1}" -f $sid, $name)
-                    }
-                } catch {
-                    Write-Log ("[ERROR] [{0}] {1} at {2}: {3}" -f $sid, $name, $hkuPath, $_.Exception.Message)
+            try {
+                if (-not (Test-Path $hkuPath)) { New-Item -Path $hkuPath -Force | Out-Null }
+                if ($value) {
+                    $dw = if ($type -eq 'String') { [string]$value } else { 1 }
+                    New-ItemProperty -Path $hkuPath -Name $name -Value $dw -PropertyType $type -Force | Out-Null
+                    Write-Log ("[INFO] [{0}] Set {1} ({2}) at {3}" -f $sid, $name, $type, $hkuPath)
+                } else {
+                    Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
+                    Write-Log ("[INFO] [{0}] Removed {1}" -f $sid, $name)
                 }
-            } elseif ($name -eq 'NoEdge' -and $value) {
-                Write-Log ("[WARN] [{0}] Edge blocking not in registry. Use AppLocker/SRP." -f $sid)
-            } else {
+            } catch {
+                Write-Log ("[ERROR] [{0}] {1} at {2}: {3}" -f $sid, $name, $hkuPath, $_.Exception.Message)
+            }
+        } elseif ($name -eq 'NoEdge' -and $value) {
+            Write-Log ("[WARN] [{0}] Edge blocking not in registry. Use AppLocker/SRP." -f $sid)
+        } else {
             Write-Log ("[DEBUG] [{0}] Policy '{1}' not found in RegMap. Skipping." -f $sid, $name)
         }
     }
 
     Write-Log ("[INFO] Completed processing SID={0} ({1}/{2})" -f $sid, $company, $role)
 }
-#Dagan1
+#Dagan2
