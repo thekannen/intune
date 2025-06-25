@@ -1,7 +1,7 @@
 {
   "CFZ": {
     "POS": {
-      "NoClose": true,
+      "NoClose": false,
       "NoControlPanel": true,
       "NoRun": true,
       "NoViewContextMenu": true,
