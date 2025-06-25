@@ -65,6 +65,15 @@ function Get-ClientSecret {
     }
 }
 
+function Test-IsLocalUser {
+    try {
+        $upn = whoami /upn 2>&1
+        return -not ($upn -match '.*@.*')  # Local users will not return a valid UPN
+    } catch {
+        return $true  # Assume local on failure
+    }
+}
+
 # Main
 try {
     $userSid   = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
@@ -74,11 +83,7 @@ try {
 
     Write-Log "[INFO] Starting policy detection for $username (SID: $userSid)"
 
-    # Detect local user (non-AAD/Entra) - skip Graph call
-    $isLocalUser = -not (Get-ADUser -Identity $username -ErrorAction SilentlyContinue) -and `
-                    -not ($env:USERDOMAIN -like "*thessagroup.com")
-
-    if ($isLocalUser) {
+    if (Test-IsLocalUser) {
         Write-Log "[INFO] Local account detected: $username"
         $company = 'LOCAL'
         $role    = 'LOCAL'

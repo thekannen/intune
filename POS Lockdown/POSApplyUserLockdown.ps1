@@ -64,12 +64,12 @@ foreach ($file in $files) {
     $company = $null; $role = $null
 
     # Detect if the SID is mounted
-    if (-not (Test-Path "HKU:\$sid")) {
+    if (-not (Test-Path "Registry::HKEY_USERS\$sid")) {
     Write-Log ("[WARN] SID {0} not loaded into HKU. Skipping." -f $sid)
     continue
     }
 
-    Start-Sleep -Seconds 2  # pacing
+    # Start-Sleep -Seconds 2  # pacing
 
     # Read company/role
     try {
@@ -129,7 +129,7 @@ foreach ($file in $files) {
 
             if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
                 $relPath = $RegMap[$name].Path
-                $hkuPath = "HKU:\$sid\$relPath"
+                $hkuPath = "Registry::HKEY_USERS\$sid\$relPath"
                 $type    = $RegMap[$name].Type
 
                 try {
