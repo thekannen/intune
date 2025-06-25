@@ -20,7 +20,7 @@ $cacheDir    = 'C:\ProgramData\SSA\LockdownQueue'
 $logFilePath = 'C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log'
 
 # Delay to allow upstream processes to complete
-Start-Sleep -Seconds 5
+# Start-Sleep -Seconds 5
 
 # Logging function
 function Write-Log {

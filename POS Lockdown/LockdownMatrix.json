@@ -13,9 +13,16 @@
       "DisableRegistryTools": true,
       "DisableCMD": true,
       "EnableScripts": false,
-      "ExecutionPolicy": true,
+      "ExecutionPolicy": "Restricted",
       "RemoveWindowsStore": true,
-      "NoEdge": true
+      "NoEdge": true,
+      "NoDesktop": true,
+      "NoTaskMgr": true,
+      "DisableChangePassword": true,
+      "NoLogoff": true,
+      "NoStartMenuMorePrograms": true,
+      "DisableNotificationCenter": true,
+      "DisableSystemToastNotifications": true
     },
     "Kiosk": {
       "NoClose": false,
@@ -30,9 +37,16 @@
       "DisableRegistryTools": true,
       "DisableCMD": true,
       "EnableScripts": false,
-      "ExecutionPolicy": true,
+      "ExecutionPolicy": "Restricted",
       "RemoveWindowsStore": true,
-      "NoEdge": true
+      "NoEdge": true,
+      "NoDesktop": true,
+      "NoTaskMgr": true,
+      "DisableChangePassword": true,
+      "NoLogoff": true,
+      "NoStartMenuMorePrograms": true,
+      "DisableNotificationCenter": true,
+      "DisableSystemToastNotifications": true
     }
   },
   "CTZ": {
@@ -49,9 +63,16 @@
       "DisableRegistryTools": true,
       "DisableCMD": true,
       "EnableScripts": false,
-      "ExecutionPolicy": true,
+      "ExecutionPolicy": "Restricted",
       "RemoveWindowsStore": true,
-      "NoEdge": false
+      "NoEdge": false,
+      "NoDesktop": true,
+      "NoTaskMgr": true,
+      "DisableChangePassword": true,
+      "NoLogoff": true,
+      "NoStartMenuMorePrograms": true,
+      "DisableNotificationCenter": true,
+      "DisableSystemToastNotifications": true
     },
     "Kiosk": {
       "NoClose": true,
@@ -66,9 +87,16 @@
       "DisableRegistryTools": true,
       "DisableCMD": true,
       "EnableScripts": false,
-      "ExecutionPolicy": true,
+      "ExecutionPolicy": "Restricted",
       "RemoveWindowsStore": true,
-      "NoEdge": true
+      "NoEdge": true,
+      "NoDesktop": true,
+      "NoTaskMgr": true,
+      "DisableChangePassword": true,
+      "NoLogoff": true,
+      "NoStartMenuMorePrograms": true,
+      "DisableNotificationCenter": true,
+      "DisableSystemToastNotifications": true
     }
   }
 }

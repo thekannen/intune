@@ -35,22 +35,30 @@ function Write-Log {
 
 # Registry mapping (value names and registry paths)
 $RegMap = @{
-    'NoClose'             = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoControlPanel'      = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoRun'               = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoViewContextMenu'   = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoFileMenu'          = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoFolderOptions'     = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoSetFolders'        = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoSetTaskbar'        = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'NoSMHelp'            = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer';      Type = 'DWord' }
-    'DisableRegistryTools'= @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';        Type = 'DWord' }
-    'DisableCMD'          = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                       Type = 'DWord' }
-    'EnableScripts'       = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                       Type = 'DWord' }
-    'ExecutionPolicy'     = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                       Type = 'String' }
-    'RemoveWindowsStore'  = @{ Path = 'Software\\Policies\\Microsoft\\WindowsStore';                         Type = 'DWord' }
-    'NoEdge'              = @{ Path = $null;                                                          Type = 'DWord' }
+    'NoClose'                           = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables "Shut Down" option from Start menu
+    'NoControlPanel'                    = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides or disables access to Control Panel
+    'NoRun'                             = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables the "Run" command from the Start menu
+    'NoViewContextMenu'                 = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables right-click context menus in File Explorer
+    'NoFileMenu'                        = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Removes File menu from Windows Explorer
+    'NoFolderOptions'                   = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides "Folder Options" from Tools menu
+    'NoSetFolders'                      = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Prevents changes to folders' appearance (e.g., icon settings)
+    'NoSetTaskbar'                      = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Disables taskbar customization (e.g., lock/unlock, properties)
+    'NoSMHelp'                          = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Removes Help option from Start menu
+    'DisableRegistryTools'              = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System';   Type = 'DWord' }           # Disables access to Registry Editor (regedit)
+    'DisableCMD'                        = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                   Type = 'DWord' }           # Disables use of Command Prompt (cmd.exe)
+    'EnableScripts'                     = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                   Type = 'DWord' }           # Enables or disables script execution (legacy GPO use)
+    'ExecutionPolicy'                   = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\System';                   Type = 'String' }          # Sets PowerShell script execution policy (e.g., Restricted)
+    'RemoveWindowsStore'                = @{ Path = 'Software\\Policies\\Microsoft\\WindowsStore';                      Type = 'DWord' }           # Removes access to Microsoft Store app
+    'NoEdge'                            = @{ Path = $null;                                                              Type = 'DWord' }           # Placeholder: Requires AppLocker/SRP to restrict Edge
+    'NoDesktop'                         = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides desktop icons
+    'NoTaskMgr'                         = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'; Type = 'DWord' }             # Disables Task Manager
+    'DisableChangePassword'             = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'; Type = 'DWord' }             # Disables password change via Ctrl+Alt+Del
+    'NoStartMenuMorePrograms'           = @{ Path = 'Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer'; Type = 'DWord' }           # Hides "All Apps" list
+    'DisableNotificationCenter'         = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\Explorer'; Type = 'DWord' }                           # Disables Action Center
+    'DisableSystemToastNotifications'   = @{ Path = 'Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\PushNotifications'; Type = 'DWord' }  # Disables toast notifications
+
 }
+
 
 # 1) Sanity-check queue folder
 Write-Log ("[INFO] Scanning queue directory: {0}" -f $queuePath)
