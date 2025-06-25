@@ -1,5 +1,8 @@
 # ------------------------------
 # POSUserPolicyDetector.ps1
+# Authors: 
+# --- Aaron Kannengieser - aaronkannengieser@thessagroup.com
+# --- Dagan Uzzell - daganuzzell@thessagroup.com
 # ------------------------------
 
 <#
@@ -20,7 +23,6 @@ $logFilePath = 'C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log'
 Start-Sleep -Seconds 5
 
 # Logging function
-default param
 function Write-Log {
     param([string]$Message)
     $folder = Split-Path $logFilePath
@@ -71,6 +73,35 @@ try {
     $queueFile = Join-Path $cacheDir "$userSid.txt"
 
     Write-Log "[INFO] Starting policy detection for $username (SID: $userSid)"
+
+    # Detect local user (non-AAD/Entra) - skip Graph call
+    $isLocalUser = -not (Get-ADUser -Identity $username -ErrorAction SilentlyContinue) -and `
+                    -not ($env:USERDOMAIN -like "*thessagroup.com")
+
+    if ($isLocalUser) {
+        Write-Log "[INFO] Local account detected: $username"
+        $company = 'LOCAL'
+        $role    = 'LOCAL'
+
+        $content = @(
+            "company: $company",
+            "role:    $role"
+        )
+        Write-Log "[INFO] Writing LOCAL queue file for SID=${userSid}"
+        foreach ($line in $content) {
+            Write-Log "    $line"
+        }
+        $content | Out-File -FilePath $queueFile -Encoding ASCII -Force
+
+        if (Test-Path $queueFile) {
+            $dump = (Get-Content $queueFile) -join "; "
+            Write-Log "[INFO] Queue file contents: $dump"
+        } else {
+            Write-Log "[ERROR] Queue file was NOT created at $queueFile!"
+        }
+
+        return
+    }
 
     # Get client secret
     $clientSecret = Get-ClientSecret

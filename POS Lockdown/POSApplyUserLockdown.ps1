@@ -1,5 +1,9 @@
 # ------------------------------
 # POSApplyUserLockdown.ps1
+# Authors:
+# --- Aaron Kannengieser - aaronkannengieser@thessagroup.com
+# --- Dagan Uzzell - daganuzzell@thessagroup.com
+# ------------------------------
 # ------------------------------
 
 <#
@@ -59,6 +63,12 @@ foreach ($file in $files) {
     $sid     = $file.BaseName
     $company = $null; $role = $null
 
+    # Detect if the SID is mounted
+    if (-not (Test-Path "HKU:\$sid")) {
+    Write-Log ("[WARN] SID {0} not loaded into HKU. Skipping." -f $sid)
+    continue
+    }
+
     Start-Sleep -Seconds 2  # pacing
 
     # Read company/role
@@ -73,6 +83,23 @@ foreach ($file in $files) {
     } catch {
         Write-Log ("[ERROR] Reading queue file '{0}': {1}" -f $file.FullName, $_.Exception.Message)
         continue
+    }
+
+    # Skip local, unknown, or admin accounts
+    if ($company -in @('LOCAL', 'Unknown') -or $role -in @('LOCAL', 'Unknown')) {
+        Write-Log ("[INFO] Skipping non-target user SID={0} (company={1}, role={2})" -f $sid, $company, $role)
+        continue
+    }
+
+    # Resolve NTAccount to catch built-in admins
+    try {
+        $ntAccount = (New-Object System.Security.Principal.SecurityIdentifier($sid)).Translate([System.Security.Principal.NTAccount]).Value
+        if ($ntAccount -match '\\Administrator$' -or $ntAccount -match 'Domain Admins') {
+            Write-Log ("[INFO] Skipping admin account: {0}" -f $ntAccount)
+            continue
+        }
+    } catch {
+        Write-Log ("[WARN] Could not resolve SID {0} to NTAccount: {1}" -f $sid, $_.Exception.Message)
     }
 
     # Load matrix policy
@@ -96,33 +123,35 @@ foreach ($file in $files) {
     if (-not $policy) { continue }
 
     # Apply each registry setting
-    foreach ($prop in $policy.PSObject.Properties) {
-        $name  = $prop.Name
-        $value = $prop.Value
+        foreach ($prop in $policy.PSObject.Properties) {
+            $name  = $prop.Name
+            $value = $prop.Value
 
-        if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
-            $relPath = $RegMap[$name].Path
-            $hkuPath = "HKU:\$sid\$relPath"
-            $type    = $RegMap[$name].Type
+            if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
+                $relPath = $RegMap[$name].Path
+                $hkuPath = "HKU:\$sid\$relPath"
+                $type    = $RegMap[$name].Type
 
-            try {
-                # Ensure key exists
-                if (-not (Test-Path $hkuPath)) { New-Item -Path $hkuPath -Force | Out-Null }
-                
-                if ($value) {
-                    # Create or update property with correct type
-                    $dw = if ($type -eq 'String') { 'Restricted' } else { 1 }
-                    New-ItemProperty -Path $hkuPath -Name $name -Value $dw -PropertyType $type -Force | Out-Null
-                    Write-Log ("[INFO] [{0}] Set {1} ({2}) at {3}" -f $sid, $name, $type, $hkuPath)
-                } else {
-                    Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
-                    Write-Log ("[INFO] [{0}] Removed {1}" -f $sid, $name)
+                try {
+                    # Ensure key exists
+                    if (-not (Test-Path $hkuPath)) { New-Item -Path $hkuPath -Force | Out-Null }
+                    
+                    if ($value) {
+                        # Create or update property with correct type
+                        $dw = if ($type -eq 'String') { [string]$value } else { 1 }
+                        New-ItemProperty -Path $hkuPath -Name $name -Value $dw -PropertyType $type -Force | Out-Null
+                        Write-Log ("[INFO] [{0}] Set {1} ({2}) at {3}" -f $sid, $name, $type, $hkuPath)
+                    } else {
+                        Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
+                        Write-Log ("[INFO] [{0}] Removed {1}" -f $sid, $name)
+                    }
+                } catch {
+                    Write-Log ("[ERROR] [{0}] {1} at {2}: {3}" -f $sid, $name, $hkuPath, $_.Exception.Message)
                 }
-            } catch {
-                Write-Log ("[ERROR] [{0}] {1}: {2}" -f $sid, $name, $_.Exception.Message)
-            }
-        } elseif ($name -eq 'NoEdge' -and $value) {
-            Write-Log ("[WARN] [{0}] Edge blocking not in registry. Use AppLocker/SRP." -f $sid)
+            } elseif ($name -eq 'NoEdge' -and $value) {
+                Write-Log ("[WARN] [{0}] Edge blocking not in registry. Use AppLocker/SRP." -f $sid)
+            } else {
+            Write-Log ("[DEBUG] [{0}] Policy '{1}' not found in RegMap. Skipping." -f $sid, $name)
         }
     }
 
