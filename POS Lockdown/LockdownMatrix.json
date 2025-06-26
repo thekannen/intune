@@ -25,8 +25,8 @@
     },
     "Kiosk": {
       "NoClose": false,
-      "NoControlPanel": false,
-      "NoRun": false,
+      "NoControlPanel": true,
+      "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
       "NoFolderOptions": true,
@@ -49,8 +49,8 @@
   },
   "CTZ": {
     "POS": {
-      "NoClose": true,
-      "NoControlPanel": false,
+      "NoClose": false,
+      "NoControlPanel": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
@@ -72,8 +72,8 @@
       "DisableSystemToastNotifications": true
     },
     "Kiosk": {
-      "NoClose": true,
-      "NoControlPanel": false,
+      "NoClose": false,
+      "NoControlPanel": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
@@ -87,6 +87,31 @@
       "ExecutionPolicy": "Restricted",
       "RemoveWindowsStore": true,
       "NoEdge": true,
+      "NoDesktop": true,
+      "NoTaskMgr": true,
+      "DisableChangePassword": true,
+      "NoStartMenuMorePrograms": true,
+      "DisableNotificationCenter": true,
+      "DisableSystemToastNotifications": true
+    }
+  },
+  "LAZ": {
+    "POS": {
+      "NoClose": false,
+      "NoControlPanel": true,
+      "NoRun": true,
+      "NoViewContextMenu": true,
+      "NoFileMenu": true,
+      "NoFolderOptions": true,
+      "NoSetFolders": true,
+      "NoSetTaskbar": true,
+      "NoSMHelp": true,
+      "DisableRegistryTools": true,
+      "DisableCMD": true,
+      "EnableScripts": false,
+      "ExecutionPolicy": "Restricted",
+      "RemoveWindowsStore": true,
+      "NoEdge": false,
       "NoDesktop": true,
       "NoTaskMgr": true,
       "DisableChangePassword": true,

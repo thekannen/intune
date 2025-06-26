@@ -8,6 +8,7 @@
 <#
   - Ensures LockdownQueue folder exists
   - Retrieves user company and role via Graph API
+  - Falls back to cached queue if offline
   - Writes robust, logged queue file
   - Includes startup delay to ensure sequential execution
 #>
@@ -18,9 +19,6 @@ $clientId    = '231165ef-2a5c-4136-987f-4835086c089e'
 $secretPath  = 'C:\ProgramData\SSA\Secrets\GraphApiCred.dat'
 $cacheDir    = 'C:\ProgramData\SSA\LockdownQueue'
 $logFilePath = 'C:\ProgramData\SSA\Logs\POSUserPolicyDetector.log'
-
-# Delay to allow upstream processes to complete
-# Start-Sleep -Seconds 5
 
 # Logging function
 function Write-Log {
@@ -74,6 +72,26 @@ function Test-IsLocalUser {
     }
 }
 
+# Helper: write queue file
+function Write-QueueFile {
+    param([string]$sid, [string]$company, [string]$role)
+    $queueFile = Join-Path $cacheDir "$sid.txt"
+    $content = @(
+        "company: $company",
+        "role:    $role"
+    )
+    Write-Log "[INFO] Writing queue file for SID=${sid}"
+    foreach ($line in $content) { Write-Log "    $line" }
+    $content | Out-File -FilePath $queueFile -Encoding ASCII -Force
+
+    if (Test-Path $queueFile) {
+        $dump = (Get-Content $queueFile) -join "; "
+        Write-Log "[INFO] Queue file contents: $dump"
+    } else {
+        Write-Log "[ERROR] Queue file was NOT created at $queueFile!"
+    }
+}
+
 # Main
 try {
     $userSid   = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
@@ -85,26 +103,7 @@ try {
 
     if (Test-IsLocalUser) {
         Write-Log "[INFO] Local account detected: $username"
-        $company = 'LOCAL'
-        $role    = 'LOCAL'
-
-        $content = @(
-            "company: $company",
-            "role:    $role"
-        )
-        Write-Log "[INFO] Writing LOCAL queue file for SID=${userSid}"
-        foreach ($line in $content) {
-            Write-Log "    $line"
-        }
-        $content | Out-File -FilePath $queueFile -Encoding ASCII -Force
-
-        if (Test-Path $queueFile) {
-            $dump = (Get-Content $queueFile) -join "; "
-            Write-Log "[INFO] Queue file contents: $dump"
-        } else {
-            Write-Log "[ERROR] Queue file was NOT created at $queueFile!"
-        }
-
+        Write-QueueFile -sid $userSid -company 'LOCAL' -role 'LOCAL'
         return
     }
 
@@ -123,61 +122,34 @@ try {
     $token = $tokenResponse.access_token
     Write-Log "[INFO] Acquired Graph access token"
 
-    # ——————————————————————————————
-    # Enhanced user-info call with full logging
-    # ——————————————————————————————
+    # Query user object
     $select  = '%24select=companyName,jobTitle'
     $userUrl = "https://graph.microsoft.com/v1.0/users/$upn`?$select"
     Write-Log "[INFO] Fetching user object for UPN: $upn"
     Write-Log "[INFO] Request URI: $userUrl"
 
-    try {
-        $userInfo = Invoke-RestMethod `
-            -Uri    $userUrl `
-            -Headers @{ Authorization = "Bearer $token" } `
-            -Method GET -ErrorAction Stop
+    $userInfo = Invoke-RestMethod `
+        -Uri    $userUrl `
+        -Headers @{ Authorization = "Bearer $token" } `
+        -Method GET -ErrorAction Stop
 
-        Write-Log "[INFO] Successfully retrieved user object."
-        $company = $userInfo.companyName
-        $role    = $userInfo.jobTitle
-    }
-    catch {
-        $ex   = $_.Exception
-        $resp = $ex.Response
-        $code = if ($resp) { $resp.StatusCode.Value__ } else { 'N/A' }
-        $body = if ($resp) {
-                    (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd()
-                } else { '' }
+    Write-Log "[INFO] Successfully retrieved user object."
+    $company = if ($userInfo.companyName) { $userInfo.companyName } else { 'Unknown' }
+    $role    = if ($userInfo.jobTitle)    { $userInfo.jobTitle }    else { 'Unknown' }
 
-        Write-Log "[ERROR] Failed to GET user object. HTTP $code"
-        Write-Log "[ERROR] Response body: $body"
-        Write-Log "[ERROR] Exception message: $($ex.Message)"
-        throw
-    }
-
-    if (-not $company) { $company = 'Unknown' }
-    if (-not $role)    { $role    = 'Unknown' }
-
-    # 3) Write queue file with full logging
-    $content = @(
-        "company: $company",
-        "role:    $role"
-    )
-    Write-Log "[INFO] About to write queue file for SID=${userSid}"
-    foreach ($line in $content) {
-        Write-Log "    $line"
-    }
-    $content | Out-File -FilePath $queueFile -Encoding ASCII -Force
-
-    if (Test-Path $queueFile) {
-        $dump = (Get-Content $queueFile) -join "; "
-        Write-Log "[INFO] Queue file contents: $dump"
-    } else {
-        Write-Log "[ERROR] Queue file was NOT created at $queueFile!"
-    }
+    Write-QueueFile -sid $userSid -company $company -role $role
 }
 catch {
     Write-Log "[ERROR] Detection failed: $($_.Exception.Message)"
+    $userSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    $queueFile = Join-Path $cacheDir "$userSid.txt"
+
+    if (Test-Path $queueFile) {
+        Write-Log "[WARN] Falling back to existing queue file at $queueFile"
+    } else {
+        Write-Log "[WARN] No existing queue file. Writing default values."
+        Write-QueueFile -sid $userSid -company 'Unknown' -role 'Unknown'
+    }
 }
 
 #DRAGON
