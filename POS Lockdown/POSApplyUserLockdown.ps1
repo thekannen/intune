@@ -54,7 +54,7 @@ $RegMap = @{
     'RemoveWindowsStore'                = @{ Path = 'Software\Policies\Microsoft\WindowsStore';                             Type = 'DWord' }  # Removes access to Microsoft Store
     'NoEdge'                            = @{ Path = $null;                                                                  Type = 'DWord' }  # Not enforced via registry — use AppLocker/SRP to block Edge
     'NoDesktop'                         = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';          Type = 'DWord' }  # Hides desktop icons
-    'NoTaskMgr'                         = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';            Type = 'DWord' }  # Disables Task Manager
+    'DisableTaskMgr'                    = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';            Type = 'DWord' }  # Disables Task Manager
     'DisableChangePassword'             = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\System';            Type = 'DWord' }  # Disables "Change Password" in Ctrl+Alt+Del screen
     'NoStartMenuMorePrograms'           = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';          Type = 'DWord' }  # Hides "All Apps" list in Start menu
     'DisableNotificationCenter'         = @{ Path = 'Software\Policies\Microsoft\Windows\Explorer';                         Type = 'DWord' }  # Disables Action Center (notification center)
@@ -68,6 +68,7 @@ $files = Get-ChildItem -Path $queuePath -Filter '*.txt' -ErrorAction SilentlyCon
 $fileNames = $files | Select-Object -ExpandProperty Name
 Write-Log ("[INFO] Found {0} queue file(s): {1}" -f $files.Count, ($fileNames -join ', '))
 
+# Track if changes were actually made to the system
 $changesMade = $false
 
 # 2) Process each queue file
@@ -132,27 +133,31 @@ foreach ($file in $files) {
 
     if (-not $policy) { continue }
 
-    # Apply each registry setting
+   # Apply each registry setting from the matrix policy
     foreach ($prop in $policy.PSObject.Properties) {
-        $name  = $prop.Name
-        $value = $prop.Value
+        $name  = $prop.Name     # Setting name, e.g. "NoControlPanel"
+        $value = $prop.Value    # Desired value (true/false or a string)
 
+        # Check if the setting exists in our RegMap and has a valid registry path
         if ($RegMap.ContainsKey($name) -and $RegMap[$name].Path) {
-            $relPath = $RegMap[$name].Path
-            $hkuPath = "Registry::HKEY_USERS\$sid\$relPath"
-            $type    = $RegMap[$name].Type
+            $relPath = $RegMap[$name].Path     # Relative registry path from RegMap
+            $hkuPath = "Registry::HKEY_USERS\$sid\$relPath"  # Full path to user-specific registry key
+            $type    = $RegMap[$name].Type     # Registry type (DWord or String)
 
             try {
-                # Ensure key exists
+                # Ensure the registry key exists before applying settings
                 if (-not (Test-Path $hkuPath)) {
                     New-Item -Path $hkuPath -Force | Out-Null
                 }
 
                 if ($value) {
+                    # If value is truthy, prepare the value to set
                     $dw = if ($type -eq 'String') { [string]$value } else { 1 }
 
+                    # Get the current value if it exists
                     $current = Get-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $name -ErrorAction SilentlyContinue
 
+                    # Only write if the value has changed
                     if ($current -ne $dw) {
                         New-ItemProperty -Path $hkuPath -Name $name -Value $dw -PropertyType $type -Force | Out-Null
                         Write-Log ("[INFO] [{0}] Set {1} ({2}) at {3}" -f $sid, $name, $type, $hkuPath)
@@ -161,26 +166,35 @@ foreach ($file in $files) {
                         Write-Log ("[DEBUG] [{0}] {1} already set correctly, skipping." -f $sid, $name)
                     }
                 } else {
-                    if (Test-Path "$hkuPath\$name") {
+                    # If value is falsy/null, attempt to remove the registry value
+                    try {
+                        # Confirm the value exists before removing
+                        Get-ItemPropertyValue -Path $hkuPath -Name $name -ErrorAction Stop
                         Remove-ItemProperty -Path $hkuPath -Name $name -ErrorAction SilentlyContinue
                         Write-Log ("[INFO] [{0}] Removed {1}" -f $sid, $name)
                         $changesMade = $true
-                    } else {
+                    } catch {
                         Write-Log ("[DEBUG] [{0}] {1} already not set, skipping removal." -f $sid, $name)
                     }
                 }
             } catch {
+                # Catch-all for any registry access errors
                 Write-Log ("[ERROR] [{0}] {1} at {2}: {3}" -f $sid, $name, $hkuPath, $_.Exception.Message)
             }
-        } elseif ($name -eq 'NoEdge' -and $value) {
+        }
+        # Special handling for NoEdge setting — not enforceable via registry
+        elseif ($name -eq 'NoEdge' -and $value) {
             Write-Log ("[WARN] [{0}] Edge blocking not in registry. Use AppLocker/SRP." -f $sid)
-        } else {
+        }
+        # If the setting isn't mapped at all
+        else {
             Write-Log ("[DEBUG] [{0}] Policy '{1}' not found in RegMap. Skipping." -f $sid, $name)
         }
     }
-
-    Write-Log ("[INFO] Completed processing SID={0} ({1}/{2})" -f $sid, $company, $role)
 }
+
+# Final log per user SID after applying all settings
+Write-Log ("[INFO] Completed processing SID={0} ({1}/{2})" -f $sid, $company, $role)
 
 if ($changesMade) {
     Write-Log "[INFO] Policy changes detected. Restarting explorer.exe..."
