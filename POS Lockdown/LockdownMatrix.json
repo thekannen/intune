@@ -19,7 +19,6 @@
       "NoDesktop": true,
       "NoTaskMgr": true,
       "DisableChangePassword": true,
-      "NoLogoff": true,
       "NoStartMenuMorePrograms": true,
       "DisableNotificationCenter": true,
       "DisableSystemToastNotifications": true
@@ -43,7 +42,6 @@
       "NoDesktop": true,
       "NoTaskMgr": true,
       "DisableChangePassword": true,
-      "NoLogoff": true,
       "NoStartMenuMorePrograms": true,
       "DisableNotificationCenter": true,
       "DisableSystemToastNotifications": true
@@ -69,7 +67,6 @@
       "NoDesktop": true,
       "NoTaskMgr": true,
       "DisableChangePassword": true,
-      "NoLogoff": true,
       "NoStartMenuMorePrograms": true,
       "DisableNotificationCenter": true,
       "DisableSystemToastNotifications": true
@@ -93,7 +90,6 @@
       "NoDesktop": true,
       "NoTaskMgr": true,
       "DisableChangePassword": true,
-      "NoLogoff": true,
       "NoStartMenuMorePrograms": true,
       "DisableNotificationCenter": true,
       "DisableSystemToastNotifications": true

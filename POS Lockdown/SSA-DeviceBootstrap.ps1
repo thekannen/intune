@@ -123,7 +123,7 @@ try {
 try {
     $updateAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -File `"$localDownloadScriptPath`""
     $updateTrigger = New-ScheduledTaskTrigger -AtLogOn
-    $updateTrigger.Delay = 'PT5M'  # Delay 5 minutes after logon
+    $updateTrigger.Delay = 'PT1M'  # Delay 1 minutes after logon
 
     $updatePrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 

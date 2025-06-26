@@ -165,4 +165,25 @@ foreach ($file in $files) {
 
     Write-Log ("[INFO] Completed processing SID={0} ({1}/{2})" -f $sid, $company, $role)
 }
+
+Write-Log "[INFO] Restarting explorer.exe to apply policy changes..."
+
+# Kill any running explorer.exe instances for the current user(s)
+Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+        Stop-Process -Id $_.Id -Force
+        Write-Log ("[INFO] Stopped explorer.exe (PID: {0})" -f $_.Id)
+    } catch {
+        Write-Log ("[WARN] Could not stop explorer.exe: {0}" -f $_.Exception.Message)
+    }
+}
+
+# Start explorer again
+try {
+    Start-Process "explorer.exe"
+    Write-Log "[INFO] Relaunched explorer.exe"
+} catch {
+    Write-Log ("[ERROR] Failed to restart explorer.exe: {0}" -f $_.Exception.Message)
+}
+
 #Dagan1
