@@ -50,7 +50,7 @@
   "CTZ": {
     "POS": {
       "NoClose": false,
-      "NoControlPanel": true,
+      "NoControlPanel": false,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
