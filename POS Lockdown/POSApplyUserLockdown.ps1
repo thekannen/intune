@@ -193,6 +193,30 @@ foreach ($file in $files) {
     }
 }
 
+# -- Additional handling for Windows 11 Settings blocking --
+if ($policy.PSObject.Properties.Name -contains 'HideAllSettingsPages' -and $policy.HideAllSettingsPages) {
+    $settingsKey = "Registry::HKEY_USERS\$sid\Software\Policies\Microsoft\Windows\Explorer"
+    try {
+        if (-not (Test-Path $settingsKey)) {
+            New-Item -Path $settingsKey -Force | Out-Null
+        }
+
+        $existing = Get-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty 'SettingsPageVisibility' -ErrorAction SilentlyContinue
+
+        if ($existing -ne 'hide:*') {
+            New-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' `
+                             -Value 'hide:*' -PropertyType String -Force | Out-Null
+            Write-Log ("[INFO] [{0}] Applied SettingsPageVisibility=hide:* to block Settings app" -f $sid)
+            $changesMade = $true
+        } else {
+            Write-Log ("[DEBUG] [{0}] SettingsPageVisibility already set to hide:*, skipping." -f $sid)
+        }
+    } catch {
+        Write-Log ("[ERROR] [{0}] Failed to apply SettingsPageVisibility: {1}" -f $sid, $_.Exception.Message)
+    }
+}
+
 # Final log per user SID after applying all settings
 Write-Log ("[INFO] Completed processing SID={0} ({1}/{2})" -f $sid, $company, $role)
 

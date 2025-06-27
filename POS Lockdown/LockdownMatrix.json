@@ -3,6 +3,7 @@
     "POS": {
       "NoClose": false,
       "NoControlPanel": true,
+      "HideAllSettingsPages": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
@@ -26,6 +27,7 @@
     "Kiosk": {
       "NoClose": false,
       "NoControlPanel": true,
+      "HideAllSettingsPages": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
@@ -51,6 +53,7 @@
     "POS": {
       "NoClose": false,
       "NoControlPanel": true,
+      "HideAllSettingsPages": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
@@ -74,6 +77,7 @@
     "Kiosk": {
       "NoClose": false,
       "NoControlPanel": true,
+      "HideAllSettingsPages": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
@@ -99,6 +103,7 @@
     "POS": {
       "NoClose": false,
       "NoControlPanel": true,
+      "HideAllSettingsPages": true,
       "NoRun": true,
       "NoViewContextMenu": true,
       "NoFileMenu": true,
