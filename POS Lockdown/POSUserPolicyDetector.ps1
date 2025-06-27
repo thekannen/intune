@@ -95,8 +95,15 @@ function Write-QueueFile {
 # Main
 try {
     $userSid   = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-    $username  = $env:USERNAME
-    $upn       = "$username@thessagroup.com"
+
+    $upn = whoami /upn 2>$null
+
+    if (-not $upn -or $upn -eq "") {
+        Write-Log "[WARN] Could not retrieve UPN from whoami. Falling back to constructed UPN."
+        $username = $env:USERNAME
+        $upn = "$username@thessagroup.com"
+    }
+
     $queueFile = Join-Path $cacheDir "$userSid.txt"
 
     Write-Log "[INFO] Starting policy detection for $username (SID: $userSid)"
