@@ -3,6 +3,7 @@
     "POSUserPolicyDetector.ps1",
     "POSApplyUserLockdown.ps1",    
     "Download-ScriptsFromGithub.ps1",
-    "LockdownMatrix.json"
+    "LockdownMatrix.json",
+    "EmptyStartLayout.xml"
   ]
 }

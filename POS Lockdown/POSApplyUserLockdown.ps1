@@ -59,6 +59,8 @@ $RegMap = @{
     'NoStartMenuMorePrograms'           = @{ Path = 'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer';          Type = 'DWord' }  # Hides "All Apps" list in Start menu
     'DisableNotificationCenter'         = @{ Path = 'Software\Policies\Microsoft\Windows\Explorer';                         Type = 'DWord' }  # Disables Action Center (notification center)
     'DisableSystemToastNotifications'   = @{ Path = 'Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'; Type = 'DWord' }  # Disables system-wide toast notifications
+    'StartLayoutPath'                   = @{ Path = 'Software\Policies\Microsoft\Windows\StartMenuExperience';              Type = 'String' } # Points to Start Layout XML
+
 }
 
 
@@ -191,29 +193,29 @@ foreach ($file in $files) {
             Write-Log ("[DEBUG] [{0}] Policy '{1}' not found in RegMap. Skipping." -f $sid, $name)
         }
     }
-}
 
-# -- Additional handling for Windows 11 Settings blocking --
-if ($policy.PSObject.Properties.Name -contains 'HideAllSettingsPages' -and $policy.HideAllSettingsPages) {
-    $settingsKey = "Registry::HKEY_USERS\$sid\Software\Policies\Microsoft\Windows\Explorer"
-    try {
-        if (-not (Test-Path $settingsKey)) {
-            New-Item -Path $settingsKey -Force | Out-Null
+    # -- Additional handling for Windows 11 Settings blocking --
+    if ($policy.PSObject.Properties.Name -contains 'HideAllSettingsPages' -and $policy.HideAllSettingsPages) {
+        $settingsKey = "Registry::HKEY_USERS\$sid\Software\Policies\Microsoft\Windows\Explorer"
+        try {
+            if (-not (Test-Path $settingsKey)) {
+                New-Item -Path $settingsKey -Force | Out-Null
+            }
+
+            $existing = Get-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' -ErrorAction SilentlyContinue |
+                        Select-Object -ExpandProperty 'SettingsPageVisibility' -ErrorAction SilentlyContinue
+
+            if ($existing -ne 'hide:*') {
+                New-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' `
+                                -Value 'hide:*' -PropertyType String -Force | Out-Null
+                Write-Log ("[INFO] [{0}] Applied SettingsPageVisibility=hide:* to block Settings app" -f $sid)
+                $changesMade = $true
+            } else {
+                Write-Log ("[DEBUG] [{0}] SettingsPageVisibility already set to hide:*, skipping." -f $sid)
+            }
+        } catch {
+            Write-Log ("[ERROR] [{0}] Failed to apply SettingsPageVisibility: {1}" -f $sid, $_.Exception.Message)
         }
-
-        $existing = Get-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' -ErrorAction SilentlyContinue |
-                    Select-Object -ExpandProperty 'SettingsPageVisibility' -ErrorAction SilentlyContinue
-
-        if ($existing -ne 'hide:*') {
-            New-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' `
-                             -Value 'hide:*' -PropertyType String -Force | Out-Null
-            Write-Log ("[INFO] [{0}] Applied SettingsPageVisibility=hide:* to block Settings app" -f $sid)
-            $changesMade = $true
-        } else {
-            Write-Log ("[DEBUG] [{0}] SettingsPageVisibility already set to hide:*, skipping." -f $sid)
-        }
-    } catch {
-        Write-Log ("[ERROR] [{0}] Failed to apply SettingsPageVisibility: {1}" -f $sid, $_.Exception.Message)
     }
 }
 

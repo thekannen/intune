@@ -21,7 +21,7 @@
       "DisableTaskMgr": false,
       "DisableChangePassword": true,
       "NoStartMenuMorePrograms": true,
-      "DisableNotificationCenter": true,
+      "DisableNotificationCenter": true,  
       "DisableSystemToastNotifications": true
     },
     "Kiosk": {
@@ -45,7 +45,7 @@
       "DisableTaskMgr": true,
       "DisableChangePassword": true,
       "NoStartMenuMorePrograms": true,
-      "DisableNotificationCenter": true,
+      "DisableNotificationCenter": true,      
       "DisableSystemToastNotifications": true
     }
   },
@@ -95,7 +95,7 @@
       "DisableTaskMgr": true,
       "DisableChangePassword": true,
       "NoStartMenuMorePrograms": true,
-      "DisableNotificationCenter": true,
+      "DisableNotificationCenter": true,      
       "DisableSystemToastNotifications": true
     }
   },
