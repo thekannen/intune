@@ -135,6 +135,37 @@ foreach ($file in $files) {
 
     if (-not $policy) { continue }
 
+        # --- Exception override for Gateway Admin ---
+    if ($upn -ieq 'SSAGATEWAYADMIN@THESSAGROUP.COM') {
+        Write-Log ("[INFO] [{0}] Detected Gateway Admin UPN, removing Settings restrictions..." -f $sid)
+
+        # Remove SettingsPageVisibility
+        $settingsKey = "Registry::HKEY_USERS\$sid\Software\Policies\Microsoft\Windows\Explorer"
+        if (Test-Path $settingsKey) {
+            try {
+                Remove-ItemProperty -Path $settingsKey -Name 'SettingsPageVisibility' -ErrorAction Stop
+                Write-Log ("[INFO] [{0}] Removed SettingsPageVisibility" -f $sid)
+            } catch {
+                Write-Log ("[WARN] [{0}] Failed to remove SettingsPageVisibility: {1}" -f $sid, $_.Exception.Message)
+            }
+        }
+
+        # Remove NoControlPanel
+        $controlPanelKey = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+        if (Test-Path $controlPanelKey) {
+            try {
+                Remove-ItemProperty -Path $controlPanelKey -Name 'NoControlPanel' -ErrorAction Stop
+                Write-Log ("[INFO] [{0}] Removed NoControlPanel" -f $sid)
+            } catch {
+                Write-Log ("[WARN] [{0}] Failed to remove NoControlPanel: {1}" -f $sid, $_.Exception.Message)
+            }
+        }
+
+        # Skip the rest of the lockdown
+        Write-Log ("[INFO] [{0}] Skipping lockdown policy application for Gateway Admin" -f $sid)
+        continue
+    }
+
    # Apply each registry setting from the matrix policy
     foreach ($prop in $policy.PSObject.Properties) {
         $name  = $prop.Name     # Setting name, e.g. "NoControlPanel"
