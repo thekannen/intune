@@ -60,7 +60,7 @@ $RegMap = @{
     'DisableNotificationCenter'         = @{ Path = 'Software\Policies\Microsoft\Windows\Explorer';                         Type = 'DWord' }  # Disables Action Center (notification center)
     'DisableSystemToastNotifications'   = @{ Path = 'Software\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'; Type = 'DWord' }  # Disables system-wide toast notifications
     'StartLayoutPath'                   = @{ Path = 'Software\Policies\Microsoft\Windows\StartMenuExperience';              Type = 'String' } # Points to Start Layout XML
-
+    'HVCIEnabled'                       = @{ Path = 'SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity'; Type = 'DWord' } # Enabled = 0 to disable Memory Integrity
 }
 
 
